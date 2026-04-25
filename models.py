@@ -1,17 +1,18 @@
-from typing import List, Optional, Literal
+﻿from typing import Optional, Literal
 from openenv.core.env_server import Action, Observation, State
 from pydantic import Field
 
-class SupportAction(Action):
-    action_type: Literal["search", "route"] = Field(..., description="Action to take")
-    department: Optional[str] = Field(None, description="Required for route action")
+class SREAction(Action):
+    action_type: Literal["query_logs", "check_metrics", "resolve_ticket"] = Field(..., description="Action to take")
+    service_name: Optional[str] = Field(None, description="Required for query_logs")
+    dashboard_id: Optional[str] = Field(None, description="Required for check_metrics")
+    root_cause: Optional[str] = Field(None, description="Required for resolve_ticket")
 
-class SupportObservation(Observation):
+class SREObservation(Observation):
     ticket_id: str
     content: str
-    search_result: Optional[str] = None
-    available_departments: List[str] = ["Billing", "Tech", "Sales"]
+    terminal_output: str = ""
 
-class SupportState(State):
+class SREState(State):
     task_id: str = "easy"
     current_ticket_index: int = 0

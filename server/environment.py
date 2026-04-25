@@ -1,49 +1,61 @@
-import uuid
+﻿import uuid
 from typing import List, Dict
 from openenv.core.env_server import Environment
-from models import SupportAction, SupportObservation, SupportState
+from models import SREAction, SREObservation, SREState
 
-class SupportEnvironment(Environment):
+class SREEnvironment(Environment):
     def __init__(self):
         super().__init__()
-        self._db = {
-            "T1": "Customer History: Frequent refunder. Status: Valid invoice.",
-            "T4": "System Log: Payment gateway timed out. Card ending in 4242.",
-            "T6": "Dev Log: 500 error on /api/auth. Cluster: us-east-1."
+        self.logs = {
+            "auth-service": "ERROR: Connection to DB timed out.",
+            "database": "WARN: Storage 99% full.",
+            "frontend": "500 Internal Server Error calling backend-service",
+            "backend-service": "Failed to authenticate request: timeout from auth-service"
+        }
+        self.metrics = {
+            "dash-db": "CPU: 15%, Memory: 99.9%, Disk: 99% full.",
+            "dash-auth": "CPU: 5%",
+            "dash-front": "CPU: 10%",
+            "dash-back": "CPU: 20%"
         }
         self.tasks = {
-            "easy": [{"id": "T1", "text": "Refund status?", "dept": "Billing"}],
-            "medium": [{"id": "T2", "text": "Upgrade account?", "dept": "Sales"},
-                       {"id": "T3", "text": "App keeps crashing.", "dept": "Tech"}],
-            "hard": [{"id": "T4", "text": "Payment failed!", "dept": "Billing"},
-                     {"id": "T5", "text": "Bulk pricing?", "dept": "Sales"},
-                     {"id": "T6", "text": "API Auth failure.", "dept": "Tech"}]
+            "easy": [{"id": "E1", "text": "Users can't login, check auth-service logs.", "root_cause": "database"}],
+            "medium": [{"id": "M1", "text": "Backend service failing.", "root_cause": "auth-service"}],
+            "hard": [{"id": "H1", "text": "Frontend reporting 500s. Trace it back to the root cause.", "root_cause": "database"}],
         }
 
-    def reset(self, task_name: str = "easy") -> SupportObservation:
+    def reset(self, task_name: str = "easy") -> SREObservation:
         self.current_task = self.tasks.get(task_name, self.tasks["easy"])
-        self._state = SupportState(episode_id=str(uuid.uuid4()), task_id=task_name, current_ticket_index=0)
+        self._state = SREState(episode_id=str(uuid.uuid4()), task_id=task_name, current_ticket_index=0)
         t = self.current_task[0]
-        return SupportObservation(done=False, reward=0.01, ticket_id=t["id"], content=t["text"])
+        return SREObservation(done=False, reward=0.0, ticket_id=t["id"], content=t["text"], terminal_output="Environment initialized.")
 
-    def step(self, action: SupportAction) -> SupportObservation:
+    def step(self, action: SREAction) -> SREObservation:
         self._state.step_count += 1
         ticket = self.current_task[self._state.current_ticket_index]
 
-        if action.action_type == "search":
-            # Small penalty but staying > 0
-            return SupportObservation(done=False, reward=0.01, ticket_id=ticket["id"], content=ticket["text"], search_result=self._db.get(ticket["id"], "No record."))
+        reward = 0.0
+        terminal_output = ""
 
-        correct = action.department.strip().lower() == ticket["dept"].lower()
-        # Strictly between 0 and 1: 0.99 for correct, 0.01 for incorrect
-        reward = 0.99 if correct else 0.01
-        self._state.current_ticket_index += 1
+        if action.action_type == "query_logs":
+            reward = -0.1
+            terminal_output = self.logs.get(action.service_name, f"No logs found for {action.service_name}")
+        elif action.action_type == "check_metrics":
+            reward = -0.1
+            terminal_output = self.metrics.get(action.dashboard_id, f"Dashboard {action.dashboard_id} not found")
+        elif action.action_type == "resolve_ticket":
+            correct = action.root_cause and action.root_cause.strip().lower() == ticket["root_cause"].lower()
+            reward = 1.0 if correct else -1.0
+            
+            self._state.current_ticket_index += 1
+            if self._state.current_ticket_index < len(self.current_task):
+                t = self.current_task[self._state.current_ticket_index]
+                return SREObservation(done=False, reward=reward, ticket_id=t["id"], content=t["text"], terminal_output=f"Previous ticket resolved. Result: {'Correct' if correct else 'Incorrect'}. Next ticket.")
+            
+            return SREObservation(done=True, reward=reward, ticket_id="EOF", content="Done.", terminal_output=f"Final ticket resolved. Result: {'Correct' if correct else 'Incorrect'}.")
 
-        if self._state.current_ticket_index < len(self.current_task):
-            t = self.current_task[self._state.current_ticket_index]
-            return SupportObservation(done=False, reward=reward, ticket_id=t["id"], content=t["text"])
-        return SupportObservation(done=True, reward=reward, ticket_id="EOF", content="Done.")
+        return SREObservation(done=False, reward=reward, ticket_id=ticket["id"], content=ticket["text"], terminal_output=terminal_output)
 
     @property
-    def state(self) -> SupportState:
+    def state(self) -> SREState:
         return self._state
