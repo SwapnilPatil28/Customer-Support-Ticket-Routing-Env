@@ -223,25 +223,45 @@ def _dashboard_html() -> str:
     <h2>Training evidence</h2>
     <p class='sub'>
       Committed artifacts from the reference training run
-      (Qwen2.5-1.5B-Instruct, 8 episodes/task, 3 epochs).
+      (Qwen2.5-1.5B-Instruct, 8 episodes/task, 3 epochs) plus the
+      Qwen2.5-0.5B-Instruct ablation. Click any plot to open it full-size.
     </p>
     <div class='plots'>
       <figure>
-        <img src='/artifacts/reward_curve.png' alt='Reward curve by policy' loading='lazy' />
-        <figcaption>Mean episodic reward per task tier across Random / Heuristic /
-        Base-LLM / SFT-LLM. SFT matches the heuristic demonstrator across every tier
-        and outperforms the untuned base by <strong>+{hard}</strong> on hard incidents.</figcaption>
+        <a href='/artifacts/reward_curve.png' target='_blank' rel='noopener'>
+          <img src='/artifacts/reward_curve.png' alt='Reward curve by policy (1.5B)' loading='lazy' />
+        </a>
+        <figcaption><strong>1.5B reward curve.</strong> Mean episodic reward per task tier
+        across Random / Heuristic / Base-LLM / SFT-LLM. SFT matches the heuristic
+        demonstrator across every tier and outperforms the untuned base by
+        <strong>+{hard}</strong> on hard incidents.</figcaption>
       </figure>
       <figure>
-        <img src='/artifacts/training_curve.png' alt='SFT training loss and token accuracy' loading='lazy' />
-        <figcaption>Supervised loss collapses from <code>~2.84 → ~0.02</code> and
-        next-token accuracy climbs from <code>~0.49 → ~0.99</code> in three epochs on 680 rollout tokens.</figcaption>
+        <a href='/artifacts/training_curve.png' target='_blank' rel='noopener'>
+          <img src='/artifacts/training_curve.png' alt='SFT training loss and token accuracy (1.5B)' loading='lazy' />
+        </a>
+        <figcaption><strong>1.5B training curve.</strong> Supervised loss collapses from
+        <code>~2.84 → ~0.02</code> and next-token accuracy climbs from
+        <code>~0.49 → ~0.99</code> over three epochs on 680 rollout tokens.</figcaption>
       </figure>
       <figure>
-        <img src='/artifacts/reward_components.png' alt='Reward component decomposition' loading='lazy' />
-        <figcaption>Per-component reward decomposition. SFT reproduces the
-        heuristic's positive components (clue_bonus, mitigation_correct, closure_correct,
-        speed_bonus) while the base model stalls on step_cost and SLA penalties.</figcaption>
+        <a href='/artifacts/reward_components.png' target='_blank' rel='noopener'>
+          <img src='/artifacts/reward_components.png' alt='Reward component decomposition (1.5B)' loading='lazy' />
+        </a>
+        <figcaption><strong>1.5B reward-component breakdown.</strong> SFT reproduces the
+        heuristic's positive components (<code>clue_bonus</code>,
+        <code>mitigation_correct</code>, <code>closure_correct</code>,
+        <code>speed_bonus</code>) while the base model stalls on
+        <code>step_cost</code> and SLA penalties.</figcaption>
+      </figure>
+      <figure>
+        <a href='/artifacts/reward_curve_qwen0p5b.png' target='_blank' rel='noopener'>
+          <img src='/artifacts/reward_curve_qwen0p5b.png' alt='Reward curve by policy (0.5B ablation)' loading='lazy' />
+        </a>
+        <figcaption><strong>0.5B ablation reward curve.</strong> Same pipeline, smaller
+        backbone. SFT improves by only <strong>+0.43 / +0.14 / +0.00</strong> over base —
+        the 0.5B model is too small to absorb the multi-step, role-gated policy.
+        Scale is the story.</figcaption>
       </figure>
     </div>
     <p class='sub' style='margin-top:0.75rem'>
@@ -250,9 +270,7 @@ def _dashboard_html() -> str:
       ·
       <a href='/artifacts/training_log.json'>training_log.json</a>
       ·
-      <a href='/artifacts/reward_curve_qwen0p5b.png'>0.5B ablation plot</a>
-      ·
-      <a href='/artifacts/summary_metrics_qwen0p5b.json'>0.5B metrics</a>
+      <a href='/artifacts/summary_metrics_qwen0p5b.json'>summary_metrics_qwen0p5b.json</a>
     </p>
 """.format(hard=_fmt(headline_delta))
     else:
@@ -358,19 +376,19 @@ def _dashboard_html() -> str:
       background: radial-gradient(1000px 600px at 10% -10%, #1e293b, var(--bg));
       color: var(--text); padding: 2rem; margin: 0; min-height: 100vh;
     }}
-    header {{ display:flex; align-items:center; justify-content:space-between; max-width:1100px; margin:0 auto 1.5rem; flex-wrap:wrap; gap:1rem; }}
+    header {{ display:flex; align-items:center; justify-content:space-between; max-width:1200px; margin:0 auto 1.5rem; flex-wrap:wrap; gap:1rem; }}
     .brand {{ display:flex; align-items:center; gap:0.75rem; }}
     .logo {{ width:44px; height:44px; border-radius:10px; background:linear-gradient(135deg,var(--primary),var(--accent)); }}
     h1 {{ font-size:1.6rem; margin:0; }}
-    h2 {{ font-size:1.2rem; margin:1.8rem 0 0.6rem; color:#cbd5e1; }}
+    h2 {{ font-size:1.25rem; margin:1.8rem 0 0.6rem; color:#cbd5e1; }}
     .sub {{ color: var(--muted); }}
-    .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:1rem; max-width:1100px; margin:0 auto; }}
+    .grid {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:1rem; max-width:1200px; margin:0 auto; }}
     .grid-3 {{ grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); }}
     .card {{ background: var(--card); border: 1px solid #1f2a44; padding: 1.25rem; border-radius: 14px; }}
     .card h3 {{ margin:0 0 0.5rem; font-size:1rem; color:#f1f5f9; }}
     .pill {{ display:inline-block; padding:2px 8px; margin:2px; border-radius:999px; background:#1e293b; border:1px solid #334155; color:#cbd5e1; font-size:0.78rem; }}
     .pill.cta {{ background:linear-gradient(135deg,var(--primary),var(--accent)); color:#0b1225; border-color:transparent; font-weight:600; }}
-    .container {{ max-width: 1100px; margin: 0 auto; }}
+    .container {{ max-width: 1200px; margin: 0 auto; }}
     code {{ background:#0b1225; border:1px solid #1f2a44; padding:2px 6px; border-radius:6px; color:#67e8f9; font-family:'JetBrains Mono', monospace; }}
     pre {{ background:#0b1225; border:1px solid #1f2a44; padding: 1rem; border-radius: 10px; color:#cbd5e1; overflow-x:auto; font-size:0.85rem; }}
     a {{ color: var(--accent); text-decoration: none; }}
@@ -379,11 +397,20 @@ def _dashboard_html() -> str:
     .kpi .num {{ font-size:1.6rem; font-weight:700; color:#f8fafc; }}
     .kpi .lbl {{ color: var(--muted); font-size:0.8rem; }}
     .kpi .num.good {{ color: var(--good); }}
-    footer {{ max-width:1100px; margin:2rem auto 0; color:var(--muted); font-size:0.85rem; }}
-    .plots {{ display:grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); gap:1rem; max-width:1100px; margin:0 auto; }}
-    .plots figure {{ background: var(--card); border:1px solid #1f2a44; border-radius: 14px; padding: 0.75rem; margin:0; }}
-    .plots img {{ width:100%; height:auto; border-radius:8px; background:#0b1225; }}
-    .plots figcaption {{ color: var(--muted); font-size:0.8rem; margin-top:0.5rem; line-height:1.4; }}
+    footer {{ max-width:1200px; margin:2rem auto 0; color:var(--muted); font-size:0.85rem; }}
+    /* Training-evidence plots: one plot per row, full content width,
+       so dense charts (reward curves, stacked bars) stay readable. */
+    .plots {{ display:flex; flex-direction:column; gap:1.5rem; max-width:1200px; margin:0 auto; }}
+    .plots figure {{ background: var(--card); border:1px solid #1f2a44; border-radius: 14px; padding: 1.25rem; margin:0; }}
+    .plots figure a {{ display:block; }}
+    .plots img {{
+      width:100%; height:auto; display:block;
+      max-width:1100px; margin:0 auto;
+      border-radius:10px; background:#0b1225;
+      transition: transform 0.2s ease;
+    }}
+    .plots img:hover {{ transform: scale(1.01); }}
+    .plots figcaption {{ color: var(--muted); font-size:0.9rem; margin-top:0.75rem; line-height:1.55; text-align:center; max-width:1000px; margin-left:auto; margin-right:auto; }}
     .table-wrap {{ overflow-x:auto; }}
     table {{ width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.9rem; }}
     th, td {{ padding:0.5rem 0.75rem; text-align:left; border-bottom:1px solid #1f2a44; }}
