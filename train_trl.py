@@ -68,7 +68,8 @@ def rollout(policy_name: str, task_name: str, collect_dataset: bool = False):
                 records.append(
                     {
                         "prompt": obs_to_prompt(result.observation),
-                        "response": action_to_json(action),
+                        # TRL 0.20+ expects `completion` (not `response`) for prompt/completion SFT.
+                        "completion": action_to_json(action),
                     }
                 )
 
@@ -114,26 +115,25 @@ def run_trl_sft(dataset: Dataset) -> None:
 
     model = AutoModelForCausalLM.from_pretrained(BASE_MODEL)
 
-    def formatting_func(example):
-        return f"<|user|>\n{example['prompt']}\n<|assistant|>\n{example['response']}"
-
+    # TRL >= 0.20 uses `max_length`; older versions used `max_seq_length`.
     config = SFTConfig(
         output_dir="outputs/sft_run",
         per_device_train_batch_size=1,
         gradient_accumulation_steps=2,
         learning_rate=2e-5,
         num_train_epochs=1,
-        max_seq_length=768,
+        max_length=768,
         logging_steps=5,
         save_strategy="no",
-        report_to=[],
+        report_to="none",
     )
 
+    # Use prompt + completion columns; pass tokenizer as processing_class (TRL 0.20+).
     trainer = SFTTrainer(
         model=model,
         args=config,
         train_dataset=dataset,
-        formatting_func=formatting_func,
+        processing_class=tokenizer,
     )
     trainer.train()
 
