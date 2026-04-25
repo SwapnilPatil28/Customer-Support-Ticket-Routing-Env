@@ -1,17 +1,22 @@
 """Hugging Face TRL training + evaluation pipeline.
 
-What this script does end-to-end:
+Pipeline:
 
-1. Rolls out the `HeuristicCoordinator` against a running Incident Command
-   Center environment to produce `(prompt, completion)` training rows.
-2. Fine-tunes a small instruction-tuned LLM using TRL's `SFTTrainer` with a
-   single `text` column that works reliably across TRL >= 0.20.
-3. Evaluates the heuristic and random baseline policies post-training and
-   writes a reward curve + JSON metrics into `artifacts/` — exactly the
-   evidence the hackathon judges look for.
+1. **Rollout**: run the ``HeuristicCoordinator`` against the live Incident
+   Command Center environment to collect ``(prompt, completion)`` pairs.
+2. **SFT**: fine-tune a small instruction-tuned LLM on those pairs using
+   TRL's ``SFTTrainer`` with a single ``text`` column (robust across TRL
+   ≥ 0.20).
+3. **Save**: persist the fine-tuned weights + tokenizer to
+   ``artifacts/sft_model`` so the same script can later load them as an
+   agent policy.
+4. **Evaluate**: play the environment with four policies
+   ``random / heuristic / base_model / sft_model`` under identical seeds
+   and write a reward curve + metrics JSON into ``artifacts/``.
 
-Designed to run equally well on CPU (for smoke checks) and on a Colab T4 /
-HF Spaces GPU (for the real run).
+Designed to work on CPU for smoke checks and on Colab T4 / HF Spaces GPUs
+for full runs. LLM evaluation auto-enables on CUDA and can be forced with
+``EVAL_LLM_MODELS=true``.
 """
 
 from __future__ import annotations
@@ -19,9 +24,9 @@ from __future__ import annotations
 import json
 import os
 import random
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Callable, Dict, List, Optional
 
 import matplotlib.pyplot as plt
 from datasets import Dataset
@@ -33,15 +38,18 @@ from models import IncidentAction, IncidentObservation
 
 ARTIFACT_DIR = Path("artifacts")
 ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+SFT_MODEL_DIR = ARTIFACT_DIR / "sft_model"
 
 ENV_URL = os.getenv("ENV_URL", "http://127.0.0.1:8000")
 BASE_MODEL = os.getenv("BASE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 MAX_ROLLOUT_STEPS = int(os.getenv("MAX_ROLLOUT_STEPS", "120"))
+MAX_LLM_EVAL_STEPS = int(os.getenv("MAX_LLM_EVAL_STEPS", "60"))
 EPISODES_PER_TASK = int(os.getenv("EPISODES_PER_TASK", "3"))
 TRAIN_EPOCHS = float(os.getenv("TRAIN_EPOCHS", "1"))
 TRAIN_BATCH_SIZE = int(os.getenv("TRAIN_BATCH_SIZE", "1"))
 TRAIN_GRAD_ACCUM = int(os.getenv("TRAIN_GRAD_ACCUM", "2"))
 TRAIN_MAX_LENGTH = int(os.getenv("TRAIN_MAX_LENGTH", "768"))
+_EVAL_LLM_ENV = os.getenv("EVAL_LLM_MODELS", "auto").strip().lower()
 
 
 @dataclass
@@ -99,18 +107,28 @@ def rollout(
     policy_name: str,
     task_name: str,
     collect_dataset: bool = False,
+    policy_callable: Optional[Callable[[IncidentObservation], IncidentAction]] = None,
+    max_steps: Optional[int] = None,
 ):
+    """Play one episode and return (stats, rows, rewards).
+
+    If ``policy_callable`` is provided it takes precedence over
+    ``policy_name`` — this is how the LLM policies plug in.
+    """
     env = IncidentCommandEnvClient(base_url=ENV_URL).sync()
     coordinator = HeuristicCoordinator()
     records: List[Dict[str, str]] = []
     rewards: List[float] = []
     steps = 0
+    step_cap = max_steps if max_steps is not None else MAX_ROLLOUT_STEPS
 
     try:
         result = env.reset(task_name=task_name)
-        while not result.done and steps < MAX_ROLLOUT_STEPS:
+        while not result.done and steps < step_cap:
             steps += 1
-            if policy_name == "heuristic":
+            if policy_callable is not None:
+                action = policy_callable(result.observation)
+            elif policy_name == "heuristic":
                 action = coordinator.select_action(result.observation)
             else:
                 action = random_action(result.observation)
@@ -157,11 +175,7 @@ def build_training_dataset(episodes_per_task: int = EPISODES_PER_TASK) -> Datase
 
 
 def _dataset_to_sft_text_column(dataset: Dataset, tokenizer) -> Dataset:
-    """Collapse (prompt, completion) pairs into a single `text` field.
-
-    The ``text`` column path in TRL 0.20+ is the most version-robust option,
-    side-stepping brittle prompt/completion tokenization across TRL releases.
-    """
+    """Collapse (prompt, completion) pairs into a single `text` field."""
     from transformers import PreTrainedTokenizerBase
 
     if not isinstance(tokenizer, PreTrainedTokenizerBase):
@@ -172,7 +186,8 @@ def _dataset_to_sft_text_column(dataset: Dataset, tokenizer) -> Dataset:
         dataset = dataset.rename_column("response", "completion")
     if "prompt" not in dataset.column_names or "completion" not in dataset.column_names:
         raise ValueError(
-            f"Expected columns 'prompt' and 'completion' (or 'response'). Got: {dataset.column_names}"
+            f"Expected columns 'prompt' and 'completion' (or 'response'). "
+            f"Got: {dataset.column_names}"
         )
 
     has_template = bool(getattr(tokenizer, "chat_template", None))
@@ -200,7 +215,11 @@ def _dataset_to_sft_text_column(dataset: Dataset, tokenizer) -> Dataset:
     return dataset.map(to_text_batched, batched=True, remove_columns=to_drop)
 
 
-def run_trl_sft(dataset: Dataset) -> None:
+def run_trl_sft(dataset: Dataset) -> Path:
+    """Fine-tune ``BASE_MODEL`` on the collected dataset and save the model.
+
+    Returns the directory of the saved SFT checkpoint (``artifacts/sft_model``).
+    """
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer
         from trl import SFTConfig, SFTTrainer
@@ -237,36 +256,161 @@ def run_trl_sft(dataset: Dataset) -> None:
     )
     trainer.train()
 
+    SFT_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    trainer.save_model(str(SFT_MODEL_DIR))
+    tokenizer.save_pretrained(str(SFT_MODEL_DIR))
+    print(f"[train] Saved SFT checkpoint to {SFT_MODEL_DIR}")
+
+    del trainer, model, tokenizer
+    _free_gpu_memory()
+    return SFT_MODEL_DIR
+
 
 # ---------------------------------------------------------------------------
 # Evaluation + reporting
 # ---------------------------------------------------------------------------
 
 
-def evaluate_policies(seed: int = 7) -> Dict[str, List[float]]:
+def _free_gpu_memory() -> None:
+    try:
+        import gc
+        gc.collect()
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+def _cuda_available() -> bool:
+    try:
+        import torch
+
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+
+
+def _should_evaluate_llms() -> bool:
+    if _EVAL_LLM_ENV in {"1", "true", "yes", "on"}:
+        return True
+    if _EVAL_LLM_ENV in {"0", "false", "no", "off"}:
+        return False
+    # "auto" / empty: enable only when a CUDA GPU is available so CPU runs
+    # stay fast.
+    return _cuda_available()
+
+
+def _evaluate_single_policy(
+    policy_name: str,
+    select_fn: Callable[[IncidentObservation], IncidentAction],
+    max_steps: Optional[int] = None,
+) -> List[float]:
+    scores: List[float] = []
+    for task in ["easy", "medium", "hard"]:
+        stats, _, _ = rollout(
+            policy_name=policy_name,
+            task_name=task,
+            policy_callable=select_fn,
+            max_steps=max_steps,
+        )
+        print(
+            f"[eval] policy={policy_name} task={task} "
+            f"reward={stats.total_reward:+.2f} steps={stats.steps}"
+        )
+        scores.append(round(stats.total_reward, 4))
+    return scores
+
+
+def evaluate_policies(
+    seed: int = 7,
+    evaluate_llms: Optional[bool] = None,
+) -> Dict[str, List[float]]:
+    """Run each policy once per task under the same seed.
+
+    The random policy is seeded for reproducibility. The heuristic policy is
+    deterministic already. LLM policies are evaluated with greedy decoding.
+    """
     random.seed(seed)
-    random_scores: List[float] = []
-    heuristic_scores: List[float] = []
+
+    scores: Dict[str, List[float]] = {
+        "random": [],
+        "heuristic": [],
+        "base_model": [],
+        "sft_model": [],
+    }
 
     for task in ["easy", "medium", "hard"]:
         random_stats, _, _ = rollout("random", task)
         heuristic_stats, _, _ = rollout("heuristic", task)
-        random_scores.append(random_stats.total_reward)
-        heuristic_scores.append(heuristic_stats.total_reward)
+        scores["random"].append(round(random_stats.total_reward, 4))
+        scores["heuristic"].append(round(heuristic_stats.total_reward, 4))
 
-    return {"random": random_scores, "heuristic": heuristic_scores}
+    should_eval_llms = _should_evaluate_llms() if evaluate_llms is None else evaluate_llms
+    if not should_eval_llms:
+        print("[eval] Skipping LLM evaluation (no GPU or EVAL_LLM_MODELS=false).")
+        return scores
+
+    try:
+        from llm_policy import LLMPolicy
+    except Exception as exc:  # pragma: no cover - import-time safety
+        print(f"[eval] Could not import LLMPolicy ({exc}); skipping LLM eval.")
+        return scores
+
+    # Base model
+    try:
+        print(f"[eval] Loading BASE model: {BASE_MODEL}")
+        base = LLMPolicy(BASE_MODEL, label="base_model")
+        scores["base_model"] = _evaluate_single_policy(
+            "base_model", base.select_action, max_steps=MAX_LLM_EVAL_STEPS
+        )
+        base.release()
+        _free_gpu_memory()
+    except Exception as exc:
+        print(f"[eval] Base-model evaluation failed: {exc}")
+
+    # SFT model
+    if SFT_MODEL_DIR.exists():
+        try:
+            print(f"[eval] Loading SFT model: {SFT_MODEL_DIR}")
+            sft = LLMPolicy(str(SFT_MODEL_DIR), label="sft_model")
+            scores["sft_model"] = _evaluate_single_policy(
+                "sft_model", sft.select_action, max_steps=MAX_LLM_EVAL_STEPS
+            )
+            sft.release()
+            _free_gpu_memory()
+        except Exception as exc:
+            print(f"[eval] SFT-model evaluation failed: {exc}")
+    else:
+        print(f"[eval] No SFT checkpoint found at {SFT_MODEL_DIR}; skipping SFT eval.")
+
+    return scores
 
 
 def plot_rewards(score_map: Dict[str, List[float]]) -> None:
     labels = ["easy", "medium", "hard"]
     x = list(range(len(labels)))
-    plt.figure(figsize=(8, 4.5))
-    plt.plot(x, score_map["random"], marker="o", label="Random baseline")
-    plt.plot(x, score_map["heuristic"], marker="o", label="Heuristic coordinator")
+    plt.figure(figsize=(9, 5))
+
+    style = {
+        "random": ("x", "tab:red", "Random baseline"),
+        "heuristic": ("o", "tab:blue", "Heuristic coordinator"),
+        "base_model": ("^", "tab:orange", "Base LLM (untrained)"),
+        "sft_model": ("D", "tab:green", "Fine-tuned LLM (SFT)"),
+    }
+
+    for key, (marker, color, label) in style.items():
+        values = score_map.get(key) or []
+        if not values or len(values) != len(labels):
+            continue
+        plt.plot(x, values, marker=marker, color=color, label=label, linewidth=2)
+
     plt.xticks(x, labels)
     plt.xlabel("Task difficulty")
     plt.ylabel("Episode total reward")
-    plt.title("Incident Command Center — baseline comparison")
+    plt.title("Incident Command Center — policy comparison")
+    plt.axhline(0, linestyle="--", color="gray", alpha=0.5)
     plt.grid(alpha=0.3)
     plt.legend()
     plt.tight_layout()
@@ -276,7 +420,7 @@ def plot_rewards(score_map: Dict[str, List[float]]) -> None:
 
 def main() -> None:
     dataset = build_training_dataset(episodes_per_task=EPISODES_PER_TASK)
-    dataset.save_to_disk("artifacts/trl_dataset")
+    dataset.save_to_disk(str(ARTIFACT_DIR / "trl_dataset"))
 
     run_trl_sft(dataset)
     scores = evaluate_policies()
@@ -286,10 +430,17 @@ def main() -> None:
         "base_model": BASE_MODEL,
         "dataset_rows": len(dataset),
         "episodes_per_task": EPISODES_PER_TASK,
-        "random_rewards": scores["random"],
-        "heuristic_rewards": scores["heuristic"],
-        "improvement_absolute": [
-            round(h - r, 4) for h, r in zip(scores["heuristic"], scores["random"])
+        "random_rewards": scores.get("random", []),
+        "heuristic_rewards": scores.get("heuristic", []),
+        "base_model_rewards": scores.get("base_model", []),
+        "sft_model_rewards": scores.get("sft_model", []),
+        "improvement_sft_over_base": [
+            round(s - b, 4)
+            for s, b in zip(scores.get("sft_model", []), scores.get("base_model", []))
+        ] if scores.get("sft_model") and scores.get("base_model") else [],
+        "improvement_heuristic_over_random": [
+            round(h - r, 4)
+            for h, r in zip(scores.get("heuristic", []), scores.get("random", []))
         ],
     }
     with open(ARTIFACT_DIR / "summary_metrics.json", "w", encoding="utf-8") as f:

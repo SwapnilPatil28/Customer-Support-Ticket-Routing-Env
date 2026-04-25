@@ -236,9 +236,9 @@ Expected output: **21 passing** (domain rubric, incident catalog, environment in
 [`train_trl.py`](./train_trl.py) orchestrates the end-to-end training & evaluation pipeline:
 
 1. **Rollout** — the `HeuristicCoordinator` drives the live environment to collect `(prompt, completion)` pairs. Prompts include customer tier, revenue impact, visible signals and investigation targets; completions are structured JSON actions.
-2. **SFT** — the dataset is collapsed into a single `text` column (robust across TRL ≥ 0.20) and fed to `SFTTrainer`.
-3. **Evaluation** — the trained model is not yet wired as the acting policy (to stay CPU-friendly), but heuristic vs random are evaluated under identical seeds so the judges can see an observable gap.
-4. **Artifacts** — `artifacts/reward_curve.png` and `artifacts/summary_metrics.json` are written.
+2. **SFT** — the dataset is collapsed into a single `text` column (robust across TRL ≥ 0.20) and fed to `SFTTrainer`. The fine-tuned weights + tokenizer are saved to `artifacts/sft_model/`.
+3. **Evaluation** — four policies are rolled out under identical seeds: `random`, `heuristic`, `base_model` (raw `BASE_MODEL` HF checkpoint), and `sft_model` (the fine-tuned checkpoint just saved). LLM evaluation auto-enables on a CUDA GPU; force it with `EVAL_LLM_MODELS=true` or disable with `EVAL_LLM_MODELS=false`.
+4. **Artifacts** — `artifacts/reward_curve.png` (4 lines) and `artifacts/summary_metrics.json` (random / heuristic / base / SFT rewards + per-task SFT-over-base improvements) are written.
 
 ### Local run (small model)
 
@@ -274,7 +274,29 @@ Environment variables you can tune before running `train_trl.py`:
 | `TRAIN_EPOCHS` | `1` | SFT epochs |
 | `TRAIN_MAX_LENGTH` | `768` | Max sequence length |
 | `TRAIN_BATCH_SIZE` / `TRAIN_GRAD_ACCUM` | `1` / `2` | Effective batch size |
-| `MAX_ROLLOUT_STEPS` | `120` | Safety cap per episode |
+| `MAX_ROLLOUT_STEPS` | `120` | Safety cap per episode (data collection + baselines) |
+| `MAX_LLM_EVAL_STEPS` | `60` | Safety cap per episode when an LLM policy is acting |
+| `EVAL_LLM_MODELS` | `auto` | `auto` ⇒ eval LLMs only if CUDA is available; `true`/`false` to force |
+
+### Running a base vs fine-tuned comparison
+
+After `train_trl.py` finishes, the fine-tuned checkpoint lives at
+`artifacts/sft_model/`. You can re-run just the LLM rollouts against the
+running environment without retraining:
+
+```python
+# Colab / local
+import os
+os.environ["POLICY_MODEL"] = "Qwen/Qwen2.5-0.5B-Instruct"   # base model
+!python inference.py
+
+os.environ["POLICY_MODEL"] = "artifacts/sft_model"          # fine-tuned
+!python inference.py
+```
+
+`inference.py` picks up `POLICY_MODEL` and routes every step through the
+LLM via `llm_policy.LLMPolicy`, falling back to a safe action only when
+the model emits invalid JSON.
 
 ---
 

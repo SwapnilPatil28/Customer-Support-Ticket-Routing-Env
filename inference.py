@@ -26,6 +26,9 @@ from models import IncidentAction, IncidentObservation
 ENV_URL = os.getenv("ENV_URL", "http://127.0.0.1:8000")
 BENCHMARK = "incident_command_center_env"
 RANDOM_BASELINE = os.getenv("RANDOM_BASELINE", "false").lower() == "true"
+# When set, run an LLM-backed policy (base or fine-tuned checkpoint) instead
+# of the heuristic / random ones. Point this at a HF hub id or a local dir.
+POLICY_MODEL = os.getenv("POLICY_MODEL", "").strip()
 
 
 # ---------------------------------------------------------------------------
@@ -297,9 +300,14 @@ def random_action(observation: IncidentObservation) -> IncidentAction:
 # ---------------------------------------------------------------------------
 
 
-async def run_task(task_name: str) -> None:
+async def run_task(task_name: str, llm_policy=None) -> None:
     env = IncidentCommandEnvClient(base_url=ENV_URL).sync()
-    policy_name = "random_baseline" if RANDOM_BASELINE else "heuristic_coordinator"
+    if llm_policy is not None:
+        policy_name = f"llm:{getattr(llm_policy, 'label', POLICY_MODEL)}"
+    elif RANDOM_BASELINE:
+        policy_name = "random_baseline"
+    else:
+        policy_name = "heuristic_coordinator"
     coordinator = HeuristicCoordinator()
 
     log_start(task=task_name, env=BENCHMARK, policy=policy_name)
@@ -313,11 +321,12 @@ async def run_task(task_name: str) -> None:
         res = env.reset(task_name=task_name)
         while not res.done:
             steps_taken += 1
-            action = (
-                random_action(res.observation)
-                if RANDOM_BASELINE
-                else coordinator.select_action(res.observation)
-            )
+            if llm_policy is not None:
+                action = llm_policy.select_action(res.observation)
+            elif RANDOM_BASELINE:
+                action = random_action(res.observation)
+            else:
+                action = coordinator.select_action(res.observation)
             res = env.step(action)
             reward = float(res.reward or 0.0)
             rewards.append(reward)
@@ -340,18 +349,38 @@ async def run_task(task_name: str) -> None:
 
 
 def main() -> None:
+    llm_policy = None
+    if POLICY_MODEL:
+        from llm_policy import LLMPolicy
+
+        llm_policy = LLMPolicy(POLICY_MODEL, label=POLICY_MODEL)
+
     for task in ["easy", "medium", "hard"]:
-        asyncio.run(run_task(task))
+        asyncio.run(run_task(task, llm_policy=llm_policy))
+
+    if llm_policy is not None:
+        policy_label = f"llm:{POLICY_MODEL}"
+    elif RANDOM_BASELINE:
+        policy_label = "random_baseline"
+    else:
+        policy_label = "heuristic_coordinator"
+
     print(
         json.dumps(
             {
                 "benchmark": BENCHMARK,
-                "policy": "random_baseline" if RANDOM_BASELINE else "heuristic_coordinator",
+                "policy": policy_label,
                 "env_url": ENV_URL,
             },
             indent=2,
         )
     )
+
+    if llm_policy is not None:
+        try:
+            llm_policy.release()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
