@@ -72,26 +72,25 @@ This environment captures five properties that are hard to teach with static dat
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        Hugging Face Space / Docker                    │
-│                                                                        │
-│  uvicorn server.app:app                                                │
-│  ┌────────────────────────────────────────────────────────────────┐   │
-│  │  FastAPI  ──  OpenEnv transport (/reset, /step, /state, /mcp)  │   │
-│  │            ──  /healthz  /version  /env-info  /metrics  /web    │   │
-│  └─────────────────────────────┬──────────────────────────────────┘   │
-│                                │                                       │
-│  ┌─────────────────────────────▼──────────────────────────────────┐   │
-│  │  IncidentCommandCenterEnvironment  (server/environment.py)     │   │
-│  │  - Pydantic validation of IncidentAction / IncidentObservation │   │
-│  │  - Structured JSON logging, per-episode seeded RNG             │   │
-│  └─────────────┬────────────────┬────────────────┬────────────────┘   │
-│                │                │                │                     │
-│     ┌──────────▼────────┐┌──────▼────────┐┌──────▼─────────┐          │
-│     │ domain.incidents  ││ domain.reward ││ domain.roles   │          │
-│     │ 13 scenarios with ││ Rubric engine ││ Role-gated      │          │
-│     │ red-herrings and  ││ + anti-gaming ││ action permiss. │          │
-│     │ business metadata ││ + tier mult.  ││                 │          │
-│     └───────────────────┘└───────────────┘└─────────────────┘          │
+│                        Hugging Face Space / Docker                   │
+│                                                                      │
+│  uvicorn server.app:app                                              │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  FastAPI  ──  OpenEnv transport (/reset, /step, /state, /mcp)  │  │
+│  │            ──  /healthz  /version  /env-info  /metrics  /web   │  │
+│  └─────────────────────────────┬──────────────────────────────────┘  │
+│                                │                                     │
+│  ┌─────────────────────────────▼──────────────────────────────────┐  │
+│  │  IncidentCommandCenterEnvironment  (server/environment.py)     │  │
+│  │  - Structured JSON logging, per-episode seeded RNG             │  │
+│  └─────────────┬────────────────┬────────────────┬────────────────┘  │
+│                │                │                │                   │
+│     ┌──────────▼────────┐┌──────▼────────┐┌──────▼──────────┐        │
+│     │ domain.incidents  ││ domain.reward ││ domain.roles    │        │
+│     │ 13 scenarios with ││ Rubric engine ││ Role-gated      │        │
+│     │ red-herrings and  ││ + anti-gaming ││ action permiss. │        │
+│     │ business metadata ││ + tier mult.  ││                 │        │
+│     └───────────────────┘└───────────────┘└─────────────────┘        │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
