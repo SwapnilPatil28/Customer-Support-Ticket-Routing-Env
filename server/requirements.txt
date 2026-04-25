@@ -1,6 +1,8 @@
+# Minimal runtime dependencies for the Incident Command Center HTTP server.
+# Training dependencies are intentionally excluded so the Docker image used by
+# Hugging Face Spaces stays small and fast to build.
+
 openenv-core[core]>=0.2.2
 fastapi>=0.115.0
-uvicorn>=0.24.0
-
-
-
+uvicorn>=0.30.0
+pydantic>=2.7.0

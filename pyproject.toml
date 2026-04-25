@@ -10,14 +10,36 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openenv-incident-command-center"
-version = "0.1.0"
-description = "Multi-agent Incident Command Center environment for OpenEnv"
+version = "3.0.0"
+description = "Enterprise-grade multi-agent Incident Command Center environment for OpenEnv."
+readme = "README.md"
 requires-python = ">=3.10"
+authors = [{ name = "OpenEnv Hackathon Team" }]
+keywords = [
+    "openenv",
+    "rl",
+    "llm",
+    "multi-agent",
+    "incident-response",
+    "sre",
+    "hackathon",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "openenv-core[core]>=0.2.2",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
     "pydantic>=2.7.0",
+]
+
+[project.optional-dependencies]
+training = [
     "transformers>=4.44.0",
     "trl>=0.10.1",
     "datasets>=2.20.0",
@@ -25,8 +47,6 @@ dependencies = [
     "peft>=0.12.0",
     "matplotlib>=3.8.0",
 ]
-
-[project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
@@ -40,3 +60,15 @@ run-training = "train_trl:main"
 [tool.setuptools]
 include-package-data = true
 py-modules = ["client", "models", "inference", "train_trl"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["server*"]
+exclude = ["tests*", "artifacts*", "outputs*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

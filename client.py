@@ -1,37 +1,42 @@
-from openenv.core.env_client import EnvClient
+"""Typed client for the Incident Command Center environment.
+
+Built on OpenEnv's generic `EnvClient` so it exposes the full gym-style API
+(`reset`, `step`, `state`, `close`) plus the rich typed fields added by this
+environment (reward breakdowns, investigation targets, playbook hints, etc).
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
 from openenv.core.client_types import StepResult
+from openenv.core.env_client import EnvClient
+
 from models import IncidentAction, IncidentObservation, IncidentState
 
 
-class IncidentCommandEnvClient(EnvClient[IncidentAction, IncidentObservation, IncidentState]):
-    def _step_payload(self, action: IncidentAction) -> dict:
+class IncidentCommandEnvClient(
+    EnvClient[IncidentAction, IncidentObservation, IncidentState]
+):
+    """Client-side wrapper around the environment's HTTP contract."""
+
+    def _step_payload(self, action: IncidentAction) -> Dict[str, Any]:
         return action.model_dump(exclude_none=True)
 
-    def _parse_result(self, payload: dict) -> StepResult:
-        obs_data = payload.get("observation", {})
-
-        observation = IncidentObservation(
-            incident_id=obs_data.get("incident_id", ""),
-            incident_title=obs_data.get("incident_title", ""),
-            incident_description=obs_data.get("incident_description", ""),
-            available_actions=obs_data.get("available_actions", []),
-            available_teams=obs_data.get("available_teams", []),
-            visible_signals=obs_data.get("visible_signals", []),
-            terminal_output=obs_data.get("terminal_output", ""),
-            budget_remaining=obs_data.get("budget_remaining", 0),
-            sla_minutes_remaining=obs_data.get("sla_minutes_remaining", 0),
-            incidents_remaining=obs_data.get("incidents_remaining", 0),
-        )
-
+    def _parse_result(self, payload: Dict[str, Any]) -> StepResult:
+        obs_data: Dict[str, Any] = payload.get("observation", {}) or {}
+        observation = IncidentObservation.model_validate(obs_data)
         return StepResult(
             observation=observation,
-            reward=payload.get("reward", 0.0),
-            done=payload.get("done", False),
+            reward=float(payload.get("reward", 0.0)),
+            done=bool(payload.get("done", False)),
         )
 
-    def _parse_state(self, payload: dict) -> IncidentState:
-        return IncidentState(**payload)
+    def _parse_state(self, payload: Dict[str, Any]) -> IncidentState:
+        return IncidentState.model_validate(payload)
 
 
-# Backward-compatible alias for older imports.
+# Backward-compatible alias for older imports from round 1.
 SREEnvClient = IncidentCommandEnvClient
+
+__all__ = ["IncidentCommandEnvClient", "SREEnvClient"]

@@ -1,0 +1,14 @@
+{
+  "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "dataset_rows": 135,
+  "random_rewards": [
+    -3.2300000000000004,
+    -5.53,
+    -7.03
+  ],
+  "heuristic_rewards": [
+    -3.02,
+    -1.6900000000000002,
+    -0.13999999999999996
+  ]
+}

@@ -1,10 +1,16 @@
 name: "incident_command_center_env"
-version: "2.0"
-description: "A multi-agent long-horizon environment for incident triage, investigation, and coordinated remediation."
+version: "3.0"
+description: >
+  Enterprise-grade multi-agent Incident Command Center environment for
+  OpenEnv. Three specialist agents (triage, investigator, ops manager)
+  coordinate to resolve a queue of production incidents under strict
+  SLA and investigation-budget constraints. Rewards are rubric-based,
+  transparent (component breakdown on every step) and scaled by
+  customer-tier business impact.
 tasks:
   - id: "easy"
-    description: "Resolve 2 incidents with clear but noisy signals."
+    description: "Resolve 3 incidents with clear but noisy signals and fixed action budget."
   - id: "medium"
-    description: "Resolve 3 incidents with partial observability and trade-offs."
+    description: "Resolve 5 incidents with partial observability, red-herring logs, and SLA pressure."
   - id: "hard"
-    description: "Resolve 4 incidents under strict budget + SLA constraints."
+    description: "Resolve 5 high-impact incidents under strict budget + SLA, with postmortem requirements."

@@ -1,0 +1,13 @@
+.git
+.gitignore
+.gitattributes
+.venv
+__pycache__
+**/__pycache__
+**/*.pyc
+artifacts/
+outputs/
+tests/
+.pytest_cache/
+.cursor
+*.ipynb_checkpoints

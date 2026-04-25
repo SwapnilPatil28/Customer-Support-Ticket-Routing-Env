@@ -1,10 +1,19 @@
+# Runtime requirements for the Incident Command Center server + trainer.
+# Keep in sync with server/requirements.txt (server runtime) and the
+# `training` extra in pyproject.toml.
+
 openenv-core[core]>=0.2.2
 fastapi>=0.115.0
 uvicorn>=0.30.0
 pydantic>=2.7.0
+
+# Training stack (optional at runtime; required for train_trl.py)
 transformers>=4.44.0
 trl>=0.10.1
 datasets>=2.20.0
 accelerate>=0.33.0
 peft>=0.12.0
 matplotlib>=3.8.0
+
+# Dev tooling
+pytest>=8.0.0
