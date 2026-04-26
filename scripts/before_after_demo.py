@@ -2,7 +2,7 @@
 
 Runs both policies against the same task under the same seed, prints a clean
 side-by-side trace, and writes ``artifacts/before_after_demo.md`` which you
-can paste into the blog post or screen-record for the video.
+can paste into the blog post or other writeups.
 
 Usage (after ``train_trl.py`` has saved ``artifacts/sft_model``)::
 

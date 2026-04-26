@@ -113,7 +113,6 @@ Same pipeline, same data recipe, smaller backbone:
 | 💻 **Source code** | **[GitHub repo ↗](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center)** |
 | 🎓 **Reproduce the training** | **[One-click Colab notebook ↗](https://colab.research.google.com/drive/1vx9E5FrZZrHoRwXs2cvtom3DaI6kZ3LP?usp=sharing)** |
 | 📝 **Mini blog post** (the required short writeup) | **[`docs/BLOG_POST.md`](./docs/BLOG_POST.md)** |
-| 🎬 **2-minute video script** (optional bonus) | **[`docs/VIDEO_SCRIPT.md`](./docs/VIDEO_SCRIPT.md)** |
 
 > Want the rubric math, architecture, full numbers, configuration, and the hackathon checklist? Keep scrolling — **Part 2** is the full technical README.
 
@@ -130,7 +129,6 @@ Same pipeline, same data recipe, smaller backbone:
 | GitHub repository | **[`github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center`](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center)** |
 | Training notebook (Colab T4, one-click reproducible) | **[Open in Colab ↗](https://colab.research.google.com/drive/1vx9E5FrZZrHoRwXs2cvtom3DaI6kZ3LP?usp=sharing)** |
 | Mini blog post (the required short writeup) | [`docs/BLOG_POST.md`](./docs/BLOG_POST.md) |
-| 2-minute video script (optional bonus) | [`docs/VIDEO_SCRIPT.md`](./docs/VIDEO_SCRIPT.md) |
 | Submission checklist | [`docs/SUBMISSION_CHECKLIST.md`](./docs/SUBMISSION_CHECKLIST.md) |
 | Training script (Python) | [`train_trl.py`](./train_trl.py) |
 
@@ -638,7 +636,6 @@ Two scripts judges (or you) can run without a local IDE:
 │
 ├── docs/
 │   ├── BLOG_POST.md                   # The short writeup (rule 4) — renders on HF Space + GitHub
-│   ├── VIDEO_SCRIPT.md                # Optional 2-minute walkthrough script
 │   └── SUBMISSION_CHECKLIST.md        # Judging-criteria status + smoke tests
 │
 ├── artifacts/                         # All committed training evidence
@@ -708,7 +705,6 @@ Full checklist with pre-submission smoke tests → [`docs/SUBMISSION_CHECKLIST.m
 - [x] **Structured JSON logging** + 12-factor configuration
 - [x] **One-click Colab training notebook** → [Open ↗](https://colab.research.google.com/drive/1vx9E5FrZZrHoRwXs2cvtom3DaI6kZ3LP?usp=sharing)
 - [x] **Mini blog post** published as an MD file on both the HF Space and GitHub: [`docs/BLOG_POST.md`](./docs/BLOG_POST.md)
-- [x] **2-minute video script** (optional bonus): [`docs/VIDEO_SCRIPT.md`](./docs/VIDEO_SCRIPT.md)
 - [x] **Full submission checklist** mapping every rule → evidence: [`docs/SUBMISSION_CHECKLIST.md`](./docs/SUBMISSION_CHECKLIST.md)
 
 ---

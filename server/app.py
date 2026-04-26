@@ -56,7 +56,6 @@ COLAB_URL = "https://colab.research.google.com/drive/1vx9E5FrZZrHoRwXs2cvtom3DaI
 # root for it; the other three open the HF file browser.
 README_URL = f"{SPACE_PAGE_URL}/blob/main/README.md"
 BLOG_POST_URL = f"{SPACE_PAGE_URL}/blob/main/docs/BLOG_POST.md"
-VIDEO_SCRIPT_URL = f"{SPACE_PAGE_URL}/blob/main/docs/VIDEO_SCRIPT.md"
 SUBMISSION_CHECKLIST_URL = f"{SPACE_PAGE_URL}/blob/main/docs/SUBMISSION_CHECKLIST.md"
 
 app = create_fastapi_app(
@@ -584,11 +583,6 @@ def _dashboard_html() -> str:
         <div class='res-title'>Mini blog post</div>
         <div class='sub'>The short writeup — MD file on the HF Space + GitHub</div>
       </a>
-      <a class='res-card' href='{VIDEO_SCRIPT_URL}' target='_blank' rel='noopener'>
-        <div class='res-icon'>🎬</div>
-        <div class='res-title'>2-minute video script</div>
-        <div class='sub'>Optional bonus — shot list + narration</div>
-      </a>
       <a class='res-card' href='{SUBMISSION_CHECKLIST_URL}' target='_blank' rel='noopener'>
         <div class='res-icon'>✅</div>
         <div class='res-title'>Submission checklist</div>
@@ -752,7 +746,6 @@ def _dashboard_html() -> str:
       <a href='{COLAB_URL}' target='_blank' rel='noopener'>Colab</a> ·
       <a href='{README_URL}' target='_blank' rel='noopener'>README</a> ·
       <a href='{BLOG_POST_URL}' target='_blank' rel='noopener'>Blog post</a> ·
-      <a href='{VIDEO_SCRIPT_URL}' target='_blank' rel='noopener'>Video script</a> ·
       <a href='{SUBMISSION_CHECKLIST_URL}' target='_blank' rel='noopener'>Submission checklist</a>
     </div>
   </footer>

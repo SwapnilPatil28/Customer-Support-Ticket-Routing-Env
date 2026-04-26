@@ -13,7 +13,6 @@
 | 💻 **GitHub source code** | **[github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center ↗](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center)** |
 | 🎓 **Reproducible training (Colab T4)** | **[Open in Colab ↗](https://colab.research.google.com/drive/1vx9E5FrZZrHoRwXs2cvtom3DaI6kZ3LP?usp=sharing)** |
 | 📖 **Full README** (story + technical deep-dive) | **[github.com/.../README.md ↗](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center#readme)** |
-| 🎬 **2-min video walkthrough script** (optional bonus) | [`docs/VIDEO_SCRIPT.md`](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/docs/VIDEO_SCRIPT.md) |
 | ✅ **Submission checklist** | [`docs/SUBMISSION_CHECKLIST.md`](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/docs/SUBMISSION_CHECKLIST.md) |
 
 ---
@@ -234,7 +233,6 @@ I ran the exact same pipeline with the smaller **Qwen2.5-0.5B-Instruct** backbon
 | **Source + tests** | [GitHub repo (21 passing tests, Dockerfile with HEALTHCHECK)](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center) |
 | **Full docs** | [README — Part 1 story + Part 2 technical deep-dive](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center#readme) |
 | **Committed evidence** | [`artifacts/`](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center/tree/main/artifacts) — all 4 PNGs + both JSON metric files |
-| **2-min video script** (optional bonus) | [`docs/VIDEO_SCRIPT.md`](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/docs/VIDEO_SCRIPT.md) |
 | **Submission checklist** | [`docs/SUBMISSION_CHECKLIST.md`](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/docs/SUBMISSION_CHECKLIST.md) |
 
 ---
@@ -244,7 +242,6 @@ I ran the exact same pipeline with the smaller **Qwen2.5-0.5B-Instruct** backbon
 - **Replace SFT with GRPO or PPO** using the environment's native reward signal — no heuristic teacher, let the rubric itself shape the policy and push past the imitation ceiling.
 - **Scale the incident catalog** from 13 templates to 50+ (drop in JSON-defined scenarios).
 - **Add a second "adversarial" agent** that injects misleading signals to test robustness.
-- **Record the 2-minute walkthrough** from [`docs/VIDEO_SCRIPT.md`](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/docs/VIDEO_SCRIPT.md) as a bonus companion to this writeup.
 
 If you want to run it yourself, the Space and the repo are fully self-contained — `docker run` the image and point any OpenEnv-compatible client at it. Or just hit `/reset` and `/step` yourself from any language that can speak HTTP JSON.
 
