@@ -724,7 +724,7 @@ def _dashboard_html() -> str:
       <p class='sub' style='margin-top:0.75rem'>
         Full rubric (invalid-action, repeated-lookup, rollback-effective,
         post-mortem-logged, etc.) is documented in the
-        <a href='{GITHUB_URL}#reward-model' target='_blank' rel='noopener'>README</a>.
+        <a href='https://huggingface.co/spaces/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/README.md' target='_blank' rel='noopener'>README</a>.
       </p>
     </div>
 

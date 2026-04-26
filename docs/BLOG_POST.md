@@ -126,7 +126,7 @@ The reward engine emits **named components** at every step so training curves �
 
 I first wrote a deterministic `HeuristicCoordinator` that uses the observation's `investigation_targets` and role constraints to play through the environment. On hard tasks it earns **+5.89** reward where random scores **−12.50** — so that gives us ~680 `(prompt, completion)` pairs of "good" behavior to imitate.
 
-Training script: [`train_trl.py`](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/train_trl.py). One command on Colab T4 (or **[open the reproducible notebook ↗](https://colab.research.google.com/drive/1vx9E5FrZZrHoRwXs2cvtom3DaI6kZ3LP?usp=sharing)**) runs the entire pipeline:
+Training script: [`train_trl.py`](https://huggingface.co/spaces/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/train_trl.py). One command on Colab T4 (or **[open the reproducible notebook ↗](https://colab.research.google.com/drive/1vx9E5FrZZrHoRwXs2cvtom3DaI6kZ3LP?usp=sharing)**) runs the entire pipeline:
 
 ```python
 os.environ["BASE_MODEL"]         = "Qwen/Qwen2.5-1.5B-Instruct"
@@ -231,13 +231,13 @@ I ran the exact same pipeline with the smaller **Qwen2.5-0.5B-Instruct** backbon
 | **Live environment** | [swapnilpatil28-multi-agent-incident-command-center.hf.space](https://swapnilpatil28-multi-agent-incident-command-center.hf.space) (OpenEnv-compatible, Docker-backed) |
 | **Training notebook** | [One-click Colab (T4, ~1 h 15 min end-to-end)](https://colab.research.google.com/drive/1vx9E5FrZZrHoRwXs2cvtom3DaI6kZ3LP?usp=sharing) |
 | **Source + tests** | [GitHub repo (21 passing tests, Dockerfile with HEALTHCHECK)](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center) |
-| **Full docs** | [README — Part 1 story + Part 2 technical deep-dive](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center#readme) |
-| **Committed evidence** | [`artifacts/`](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center/tree/main/artifacts) — all 4 PNGs + both JSON metric files |
-| **Submission checklist** | [`docs/SUBMISSION_CHECKLIST.md`](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/docs/SUBMISSION_CHECKLIST.md) |
+| **Full docs** | [README — Part 1 story + Part 2 technical deep-dive](https://huggingface.co/spaces/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/README.md) |
+| **Committed evidence** | [`artifacts/`](https://huggingface.co/spaces/SwapnilPatil28/Multi-Agent-Incident-Command-Center/tree/main/artifacts) — all 4 PNGs + both JSON metric files |
+| **Submission checklist** | [`docs/SUBMISSION_CHECKLIST.md`](https://huggingface.co/spaces/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/docs/SUBMISSION_CHECKLIST.md) |
 
 ---
 
-## 8. What's next
+## 8. What's next (Planned)
 
 - **Replace SFT with GRPO or PPO** using the environment's native reward signal — no heuristic teacher, let the rubric itself shape the policy and push past the imitation ceiling.
 - **Scale the incident catalog** from 13 templates to 50+ (drop in JSON-defined scenarios).

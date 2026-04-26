@@ -87,9 +87,9 @@ Status against every hard gate in the official judging rules, plus every polish 
 | 5 | Dashboard upgraded: hero story panel, 4 stacked plots, resources grid with README / blog / checklist links | ✅ |
 | 6 | Blog post updated (`docs/BLOG_POST.md`) with fixed image paths (raw GitHub URLs) and 0.5B ablation section | ✅ |
 | 7 | All 21 tests passing on latest commit | ✅ |
-| 8 | Run `openenv validate` remotely against the Space — `./validate-submission.sh <space-url>` | ⬜ (run it once before the deadline) |
-| 9 | **Submit the Space URL in the hackathon form:** `https://swapnilpatil28-multi-agent-incident-command-center.hf.space` | ⬜ |
-| 10 | Do not push commits after the submission deadline — post-deadline commits won't be considered | ⬜ |
+| 8 | Run `openenv validate` remotely against the Space — `./validate-submission.sh <space-url>` | ✅ |
+| 9 | **Submit the Space URL in the hackathon form:** `https://swapnilpatil28-multi-agent-incident-command-center.hf.space` | ✅ |
+| 10 | Do not push commits after the submission deadline — post-deadline commits won't be considered | ✅ |
 
 ---
 
@@ -100,13 +100,13 @@ Status against every hard gate in the official judging rules, plus every polish 
 curl -fsS https://swapnilpatil28-multi-agent-incident-command-center.hf.space/healthz
 
 # 2. Env-info endpoint advertises metadata
-curl -s https://swapnilpatil28-multi-agent-incident-command-center.hf.space/env-info | head -20
+curl -s https://swapnilpatil28-multi-agent-incident-command-center.hf.space/env-info
 
 # 3. OpenEnv validator passes remotely
 ./validate-submission.sh https://swapnilpatil28-multi-agent-incident-command-center.hf.space
 
 # 4. A remote episode works
-ENV_URL=https://swapnilpatil28-multi-agent-incident-command-center.hf.space python inference.py | head -40
+ENV_URL=https://swapnilpatil28-multi-agent-incident-command-center.hf.space python inference.py
 ```
 
 ## Where the judges will find each artefact
