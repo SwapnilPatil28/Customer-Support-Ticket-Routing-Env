@@ -38,7 +38,12 @@ from server.domain.reward import (
     TIER_MULTIPLIER,
 )
 from server.environment import IncidentCommandCenterEnvironment
+from server import llm_remote
 from server.logging_utils import configure_logging
+
+import re as _re
+
+_JSON_RE = _re.compile(r"\{[\s\S]*\}")
 
 _LOG = logging.getLogger("icc.app")
 _CONFIG = EnvConfig.from_env()
@@ -171,6 +176,154 @@ async def version() -> JSONResponse:
 async def env_info() -> JSONResponse:
     """Rich metadata about the environment (rubric, budgets, taxonomy)."""
     return JSONResponse(_metadata_payload())
+
+
+# ---------------------------------------------------------------------------
+# Live LLM inference demo (optional — only enabled when HF credentials set)
+# ---------------------------------------------------------------------------
+
+
+def _build_demo_prompt(obs: IncidentObservation) -> str:
+    """Same prompt format the SFT model was fine-tuned on (train_trl.obs_to_prompt)."""
+    targets = obs.investigation_targets or {}
+    return (
+        "You are operating a multi-agent incident command center. "
+        "Pick the next action for the appropriate specialist role.\n\n"
+        f"Incident ID: {obs.incident_id}\n"
+        f"Title: {obs.incident_title}\n"
+        f"Description: {obs.incident_description}\n"
+        f"Customer tier: {obs.customer_tier} | "
+        f"Affected users: {obs.affected_users_estimate} | "
+        f"Revenue impact (USD/min): {obs.revenue_impact_usd_per_min}\n"
+        f"Postmortem required: {obs.postmortem_required}\n"
+        f"Visible signals: {', '.join(obs.visible_signals or [])}\n"
+        f"Available log targets: {', '.join(targets.get('logs', []) or [])}\n"
+        f"Available metric targets: {', '.join(targets.get('metrics', []) or [])}\n"
+        f"Available KB articles: {', '.join(targets.get('kb', []) or [])}\n"
+        f"Budget remaining: {obs.budget_remaining} actions | "
+        f"SLA remaining: {obs.sla_minutes_remaining} min | "
+        f"Clues found: {obs.clues_found} | "
+        f"Mitigation applied: {obs.mitigation_applied}\n"
+        f"Last terminal output: {obs.terminal_output}\n\n"
+        "Respond with a JSON object containing exactly these keys: "
+        "actor, action_type, target, root_cause, resolution_summary, "
+        "postmortem_note, confidence, reason."
+    )
+
+
+def _parse_llm_action(response_text: str) -> Dict[str, Any]:
+    """Extract the first balanced JSON object from a model response."""
+    match = _JSON_RE.search(response_text or "")
+    if not match:
+        return {}
+    raw = match.group(0)
+    last_close = raw.rfind("}")
+    if last_close != -1:
+        raw = raw[: last_close + 1]
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+@app.get("/llm-demo-status", response_class=JSONResponse)
+async def llm_demo_status() -> JSONResponse:
+    """Report whether the live-inference panel is usable (credentials set)."""
+    return JSONResponse(llm_remote.status_summary())
+
+
+@app.post("/llm-demo", response_class=JSONResponse)
+async def llm_demo(payload: Dict[str, Any]) -> JSONResponse:
+    """Run one live step against the fine-tuned model behind an HF endpoint.
+
+    Spins up a fresh isolated ``IncidentCommandCenterEnvironment`` for each
+    call so the demo never disturbs the main environment instance that is
+    answering ``/reset`` and ``/step`` for training clients. Returns the full
+    trace (observation → prompt → raw LLM text → parsed action → reward) so
+    judges can see exactly what the model produced.
+    """
+    if not llm_remote.is_configured():
+        return JSONResponse(
+            {
+                "error": "Remote LLM not configured on this Space.",
+                "status": llm_remote.status_summary(),
+            },
+            status_code=503,
+        )
+
+    task_name = str(payload.get("task_name") or "easy").strip()
+    try:
+        seed = int(payload.get("seed") or _CONFIG.default_seed)
+    except (TypeError, ValueError):
+        seed = _CONFIG.default_seed
+
+    # Isolated env so the live demo never clobbers the shared state.
+    env = IncidentCommandCenterEnvironment()
+    obs = env.reset(task_name=task_name, seed=seed)
+    prompt = _build_demo_prompt(obs)
+
+    try:
+        raw_response = llm_remote.generate(prompt)
+    except Exception as exc:  # pragma: no cover - network-dependent
+        return JSONResponse(
+            {
+                "error": f"Remote LLM call failed: {exc}",
+                "status": llm_remote.status_summary(),
+            },
+            status_code=502,
+        )
+
+    parsed_action_dict = _parse_llm_action(raw_response)
+
+    try:
+        action = IncidentAction(**parsed_action_dict)
+        parsed_ok = True
+    except Exception:
+        logs = (obs.investigation_targets or {}).get("logs", []) or []
+        fallback_target = logs[0] if logs else "payments-api"
+        action = IncidentAction(
+            actor="triage_agent",
+            action_type="inspect_logs",
+            target=fallback_target,
+            reason="Fallback (LLM JSON invalid).",
+        )
+        parsed_ok = False
+
+    step_obs = env.step(action)
+    reward_components = dict(step_obs.reward_components or {})
+    reward_total = sum(reward_components.values()) if reward_components else 0.0
+
+    return JSONResponse(
+        {
+            "task_name": task_name,
+            "seed": seed,
+            "observation_before": {
+                "incident_id": obs.incident_id,
+                "incident_title": obs.incident_title,
+                "customer_tier": obs.customer_tier,
+                "affected_users_estimate": obs.affected_users_estimate,
+                "revenue_impact_usd_per_min": obs.revenue_impact_usd_per_min,
+                "visible_signals": obs.visible_signals,
+                "investigation_targets": obs.investigation_targets,
+                "budget_remaining": obs.budget_remaining,
+                "sla_minutes_remaining": obs.sla_minutes_remaining,
+            },
+            "prompt": prompt,
+            "raw_llm_response": raw_response,
+            "parsed_action": parsed_action_dict,
+            "validated_action": action.model_dump(exclude_none=True),
+            "fallback_used": not parsed_ok,
+            "step_result": {
+                "reward_total": round(reward_total, 4),
+                "reward_components": {
+                    k: round(v, 4) for k, v in reward_components.items()
+                },
+                "done": bool(step_obs.done),
+                "terminal_output": step_obs.terminal_output,
+                "last_action_notes": list(step_obs.last_action_notes or []),
+            },
+        }
+    )
 
 
 @app.get("/metrics", response_class=PlainTextResponse)
@@ -326,6 +479,81 @@ def _dashboard_html() -> str:
     # so the existing `{themes_html}` slot renders to nothing (no duplication).
     themes_html = ""
 
+    # --- Live inference panel (only shown when HF credentials set) ----------
+    llm_status = llm_remote.status_summary()
+    if llm_status.get("configured"):
+        live_panel_html = f"""
+    <h2>Try the fine-tuned model live</h2>
+    <div class='card'>
+      <p class='sub'>
+        Spin up an isolated episode and watch the <strong>fine-tuned SFT model</strong>
+        pick the next action in real time. The prompt below is the exact format
+        used during training, so you can see how the model transforms a raw
+        observation into a typed <code>IncidentAction</code> — and the
+        environment's reward response.
+      </p>
+      <div class='live-controls'>
+        <label>Task
+          <select id='live-task'>
+            <option value='easy'>easy</option>
+            <option value='medium'>medium</option>
+            <option value='hard' selected>hard</option>
+          </select>
+        </label>
+        <label>Seed
+          <input id='live-seed' type='number' value='42' min='0' step='1' />
+        </label>
+        <button id='live-run' class='pill cta'>▶ Run one step</button>
+        <span id='live-status' class='sub'>Endpoint: {llm_status.get('host', '—')} · mode: {llm_status.get('mode', 'chat')}</span>
+      </div>
+      <div id='live-output' class='live-output' hidden>
+        <div class='live-grid'>
+          <div>
+            <h4>Observation (before)</h4>
+            <pre id='live-obs-before'></pre>
+          </div>
+          <div>
+            <h4>Prompt sent to model</h4>
+            <pre id='live-prompt'></pre>
+          </div>
+          <div>
+            <h4>Raw LLM response</h4>
+            <pre id='live-raw'></pre>
+          </div>
+          <div>
+            <h4>Parsed &amp; validated action</h4>
+            <pre id='live-action'></pre>
+          </div>
+          <div class='live-grid-full'>
+            <h4>Environment step result</h4>
+            <pre id='live-step'></pre>
+          </div>
+        </div>
+      </div>
+      <div id='live-error' class='live-error' hidden></div>
+    </div>
+"""
+    else:
+        live_panel_html = f"""
+    <h2>Try the fine-tuned model live</h2>
+    <div class='card'>
+      <p class='sub'>
+        <strong>Optional bonus panel.</strong> This Space can stream the
+        fine-tuned SFT model's decisions in real time when a Hugging Face
+        Inference Endpoint is attached. {llm_status.get('reason', '')}
+      </p>
+      <details>
+        <summary class='sub'>How the owner enables it</summary>
+        <ol>
+          <li>Upload the SFT checkpoint from <code>artifacts/sft_model/</code> to a model repo on the Hub.</li>
+          <li>Create a dedicated <a href='https://huggingface.co/inference-endpoints' target='_blank' rel='noopener'>Inference Endpoint</a> (T4 small is enough).</li>
+          <li>Set <code>LLM_ENDPOINT_URL</code> and <code>HF_TOKEN</code> as secrets on this Space.</li>
+          <li>Restart the Space — this panel turns on automatically.</li>
+        </ol>
+      </details>
+    </div>
+"""
+
     # --- Reward-rubric details ----------------------------------------------
     reward_rubric_rows = "".join(
         f"<tr><td><code>{name}</code></td><td>{value}</td></tr>"
@@ -402,6 +630,40 @@ def _dashboard_html() -> str:
     td.delta.good {{ color: var(--good); }}
     .links {{ display:flex; flex-wrap:wrap; gap:0.5rem; }}
 
+    /* Live-inference panel (fine-tuned SFT model behind HF Inference Endpoint). */
+    .live-controls {{
+      display:flex; flex-wrap:wrap; gap:1rem; align-items:center;
+      margin:0.75rem 0 1rem;
+    }}
+    .live-controls label {{
+      display:flex; flex-direction:column; gap:0.2rem;
+      font-size:0.8rem; color:var(--muted);
+    }}
+    .live-controls select, .live-controls input {{
+      background:#0b1225; border:1px solid #1f2a44; color:var(--text);
+      border-radius:8px; padding:0.35rem 0.55rem; font-size:0.9rem; min-width:110px;
+    }}
+    .live-controls button.pill.cta {{ cursor:pointer; border:0; }}
+    .live-controls button.pill.cta:disabled {{ opacity:0.6; cursor:wait; }}
+    .live-grid {{
+      display:grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap:0.9rem; margin-top:0.5rem;
+    }}
+    .live-grid h4 {{
+      margin:0 0 0.3rem; font-size:0.85rem; color:#cbd5e1;
+      text-transform:uppercase; letter-spacing:0.04em;
+    }}
+    .live-grid .live-grid-full {{ grid-column: 1 / -1; }}
+    .live-grid pre {{
+      background:#0b1225; border:1px solid #1f2a44; border-radius:10px;
+      padding:0.75rem; margin:0; font-size:0.82rem; line-height:1.45;
+      max-height:320px; overflow:auto; white-space:pre-wrap; word-wrap:break-word;
+    }}
+    .live-error {{
+      background:#2a1418; border:1px solid #ef444455; color:#fca5a5;
+      border-radius:10px; padding:0.75rem; margin-top:0.75rem; font-size:0.9rem;
+    }}
+
     /* "Story in 2 minutes" hero panel — plain-English summary for judges. */
     .hero-card {{
       background: linear-gradient(135deg, #0f2647 0%, #172a4a 60%, #1f2a44 100%);
@@ -477,7 +739,8 @@ def _dashboard_html() -> str:
       <h3 style='margin-top:1.25rem'>What is the environment?</h3>
       <p class='sub' style='margin:0 0 0.75rem'>
         Three specialist agents with <strong>different permissions</strong> resolve
-        a live queue of 13 realistic tech incidents across 3 difficulty tiers.
+        a live queue drawn from <strong>30 realistic tech incident templates</strong>
+        across 3 difficulty tiers.
       </p>
       <div class='table-wrap'>
         <table>
@@ -684,6 +947,8 @@ def _dashboard_html() -> str:
 
     {ablation_html}
 
+    {live_panel_html}
+
     {themes_html}
 
     <h2>Endpoints</h2>
@@ -763,6 +1028,68 @@ def _dashboard_html() -> str:
       const total = Object.values(data.incidents_per_task || {{}}).reduce((a,b)=>a+b,0);
       document.getElementById('kpi-inc').textContent = total;
     }} catch (e) {{}}
+
+    // Live fine-tuned-model demo. Only runs if the panel is rendered.
+    (function() {{
+      const runBtn = document.getElementById('live-run');
+      if (!runBtn) return;
+
+      const taskSel = document.getElementById('live-task');
+      const seedInp = document.getElementById('live-seed');
+      const out     = document.getElementById('live-output');
+      const err     = document.getElementById('live-error');
+      const obsPre  = document.getElementById('live-obs-before');
+      const promptPre = document.getElementById('live-prompt');
+      const rawPre  = document.getElementById('live-raw');
+      const actPre  = document.getElementById('live-action');
+      const stepPre = document.getElementById('live-step');
+
+      function showError(msg) {{
+        err.textContent = msg;
+        err.hidden = false;
+        out.hidden = true;
+      }}
+
+      function renderOutput(data) {{
+        err.hidden = true;
+        obsPre.textContent = JSON.stringify(data.observation_before || {{}}, null, 2);
+        promptPre.textContent = data.prompt || '';
+        rawPre.textContent = data.raw_llm_response || '(empty response)';
+        const fallbackTag = data.fallback_used
+          ? '// NOTE: LLM JSON was invalid — safe fallback action was used instead.\\n'
+          : '';
+        actPre.textContent = fallbackTag + JSON.stringify(data.validated_action || {{}}, null, 2);
+        stepPre.textContent = JSON.stringify(data.step_result || {{}}, null, 2);
+        out.hidden = false;
+      }}
+
+      runBtn.addEventListener('click', async () => {{
+        runBtn.disabled = true;
+        const label = runBtn.textContent;
+        runBtn.textContent = '⏳ Calling model…';
+        try {{
+          const resp = await fetch('/llm-demo', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{
+              task_name: taskSel.value,
+              seed: Number(seedInp.value) || 0
+            }})
+          }});
+          const data = await resp.json();
+          if (!resp.ok) {{
+            showError((data && data.error) ? data.error : ('HTTP ' + resp.status));
+          }} else {{
+            renderOutput(data);
+          }}
+        }} catch (e) {{
+          showError('Network error: ' + e.message);
+        }} finally {{
+          runBtn.disabled = false;
+          runBtn.textContent = label;
+        }}
+      }});
+    }})();
   </script>
 </body>
 </html>

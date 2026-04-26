@@ -26,7 +26,7 @@ Status against every hard gate in the official judging rules, plus every polish 
 - [x] Multi-role, multi-agent — `triage_agent`, `investigator_agent`, `ops_manager_agent` with **non-overlapping permissions** (`server/domain/roles.py`).
 - [x] Long-horizon — 3–5 sequential incidents per episode, 20–60 steps each, shared SLA + budget counters.
 - [x] Professional / enterprise task simulation — realistic logs, metrics, KB articles, customer-tier revenue impact, SLA timers.
-- [x] 13 unique incident templates across easy / medium / hard (`server/domain/incidents.py`).
+- [x] **30 unique incident templates** across easy / medium / hard (`server/domain/incidents.py`) — 8 easy, 11 medium, 11 hard, covering services (payments, auth, CDN, search, DNS, ML inference, storage, scheduling, messaging, config distribution) and failure modes (OOM, cert expiry, config drift, DNS TTL staleness, rate-limit cascades, GPU fragmentation, cross-region replication lag, DST scheduler bugs, firmware regressions, cache-key tenant collisions).
 - [x] Rich observation schema — customer tier, revenue impact, allowed actors per action, investigation targets grouped by tool, playbook hints, `reward_components`, `last_action_notes`.
 - [x] Composable reward rubric with **14+ named components** and anti-gaming safeguards (`server/domain/reward.py`).
 - [x] Tier-weighted business impact (`free ×0.6 · standard ×1.0 · premium ×1.4 · enterprise ×1.8`).

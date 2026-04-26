@@ -43,7 +43,7 @@ A **virtual war room** where three specialist agents resolve a live queue of rea
 | 🧪 **Investigator** | Apply a fix · roll back a deploy | Escalate or file a post-mortem |
 | 👷 **Ops Manager** | Escalate · file post-mortem · **close the ticket** | Apply a code fix |
 
-**13 real incidents** · **3 difficulty tiers** (easy / medium / hard) · **14+ named reward signals** · **customer-tier weighting** (enterprise outages cost ~3× a free-tier outage)
+**30 unique incident templates** · **3 difficulty tiers** (8 easy / 11 medium / 11 hard) · **14+ named reward signals** · **customer-tier weighting** (enterprise outages cost ~3× a free-tier outage)
 
 > Wrong actor → **−0.08**. Wrong root-cause on an enterprise ticket → **−1.98**. Correct closure on an enterprise ticket → **+1.44**. The rules matter — and every step tells you *why* it was scored.
 
@@ -661,7 +661,7 @@ Two scripts judges (or you) can run without a local IDE:
 │   ├── Dockerfile                     # Production image (HEALTHCHECK included)
 │   └── domain/
 │       ├── __init__.py
-│       ├── incidents.py               # 13 enterprise incident templates + factory
+│       ├── incidents.py               # 30 enterprise incident templates + factory
 │       ├── reward.py                  # Composable rubric engine (20+ components)
 │       ├── roles.py                   # Role-based permission policy
 │       └── rng.py                     # Deterministic per-episode RNG
@@ -697,7 +697,7 @@ ENV_LOG_LEVEL: "INFO"
 Full checklist with pre-submission smoke tests → [`docs/SUBMISSION_CHECKLIST.md`](./docs/SUBMISSION_CHECKLIST.md).
 
 - [x] **OpenEnv latest runtime** and `openenv validate` passing — [Space live](https://swapnilpatil28-multi-agent-incident-command-center.hf.space)
-- [x] **Multi-agent, long-horizon environment** with role-gated action space (3 roles × 9 actions, 13 incidents)
+- [x] **Multi-agent, long-horizon environment** with role-gated action space (3 roles × 9 actions, **30 unique incident templates**)
 - [x] **Composable, transparent, anti-gaming reward rubric** (14+ named components, tier-scaled)
 - [x] **Business-impact-aware scoring** (customer tier, revenue impact, SLA countdown)
 - [x] **End-to-end TRL SFT pipeline** that saves a checkpoint and re-evaluates it in the environment ([`train_trl.py`](./train_trl.py))

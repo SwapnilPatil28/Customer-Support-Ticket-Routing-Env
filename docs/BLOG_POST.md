@@ -24,7 +24,7 @@
 
 Each role has **different permissions**, **different information needs**, and a **different clock to beat**. Get it wrong and you bleed budget, bust the SLA, and — if the customer is on an enterprise contract — lose serious money (~3× what a free-tier outage costs).
 
-I built a simulator of that war room — an **OpenEnv-compatible** environment with 13 realistic incidents, 3 specialist roles, and 14+ named reward signals — and fine-tuned an LLM to run it.
+I built a simulator of that war room — an **OpenEnv-compatible** environment with **30 realistic incident templates**, 3 specialist roles, and 14+ named reward signals — and fine-tuned an LLM to run it.
 
 | Role | Can do | Cannot do |
 |---|---|---|
@@ -242,7 +242,7 @@ I ran the exact same pipeline with the smaller **Qwen2.5-0.5B-Instruct** backbon
 ## 8. What's next
 
 - **Replace SFT with GRPO or PPO** using the environment's native reward signal — no heuristic teacher, let the rubric itself shape the policy and push past the imitation ceiling.
-- **Scale the incident catalog** from 13 templates to 50+ (drop in JSON-defined scenarios).
+- **Grow the incident catalog further** (now at 30 templates — next stop 50+ via JSON-defined scenarios).
 - **Add a second "adversarial" agent** that injects misleading signals to test robustness.
 - **Record the 2-minute walkthrough** from [`docs/VIDEO_SCRIPT.md`](https://github.com/SwapnilPatil28/Multi-Agent-Incident-Command-Center/blob/main/docs/VIDEO_SCRIPT.md) as a bonus companion to this writeup.
 

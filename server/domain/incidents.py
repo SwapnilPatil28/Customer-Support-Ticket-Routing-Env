@@ -850,17 +850,885 @@ def _deadlock_database() -> IncidentTemplate:
     )
 
 
+# ---------------------------------------------------------------------------
+# Extended catalog (round-2 polish)
+#
+# 17 additional templates balance the tier mix (free / standard / premium /
+# enterprise), add new service dimensions (DNS, CDN, ML inference, storage,
+# message queue, config distribution) and new failure modes (GPU memory leaks,
+# replication saturation, cache key collisions, firmware regressions, DST
+# bugs). Each template follows the same pattern as INC-E1..H5 so the reward
+# rubric, environment plumbing and training scripts require no changes.
+# ---------------------------------------------------------------------------
+
+
+def _dns_ttl_stale() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-E4",
+        title="Stale DNS routes free-tier API traffic to drained region",
+        description=(
+            "Free-tier API callers keep hitting a drained region even after "
+            "a planned failover because DNS TTLs have not expired."
+        ),
+        category="networking",
+        difficulty="easy",
+        root_cause="dns_ttl_stale_after_failover",
+        root_cause_synonyms=(
+            "dns ttl stale after failover",
+            "stale dns record",
+            "long ttl blocking failover",
+        ),
+        clue_keywords=("dns", "ttl", "failover", "drain"),
+        signals=(
+            "Traffic ratio to drained region stays above 30% 30 minutes post-failover",
+            "Only free-tier resolvers (no Anycast) are affected",
+        ),
+        logs={
+            "dns-edge": "A record TTL=3600s still cached at regional resolvers",
+            "traffic-router": "Residual traffic observed on drained region us-west-2b",
+        },
+        red_herring_logs={
+            "payments-api": "steady 2xx",
+        },
+        metrics={
+            "dash-dns": "ttl_expired_ratio 0.71 (expected >0.95)",
+            "dash-router": "drained_region_share 34%",
+        },
+        red_herring_metrics={
+            "dash-cdn": "hit_ratio 95%",
+        },
+        kb={
+            "kb-dns-ttl": "Pre-lower TTL to 60s at least 2 TTLs before planned failovers.",
+        },
+        good_handoff="triage_agent",
+        accepted_fix_keywords=(
+            ("shorten", "dns", "ttl"),
+            ("force", "resolver", "refresh"),
+            ("rollback", "region", "drain"),
+        ),
+        required_investigations=1,
+        customer_tier="free",
+        affected_users_estimate=2_500,
+        revenue_impact_usd_per_min=15,
+        requires_mitigation=True,
+    )
+
+
+def _cdn_purge_scope() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-E5",
+        title="CDN purge missed a hot asset after release",
+        description=(
+            "A marketing banner refresh missed a subset of CDN edges, so a "
+            "fraction of standard-tier users see the old creative."
+        ),
+        category="cdn",
+        difficulty="easy",
+        root_cause="cdn_purge_scope_mismatch",
+        root_cause_synonyms=(
+            "cdn purge scope mismatch",
+            "edge purge partial",
+            "shield purge missed",
+        ),
+        clue_keywords=("cdn", "purge", "edge", "shield"),
+        signals=(
+            "Small but persistent share of stale banner impressions",
+            "Affected edges cluster on a single PoP provider",
+        ),
+        logs={
+            "cdn-control-plane": "Purge job completed with 14 edges skipped (policy=legacy)",
+            "edge-pop-bom-1": "Serving banner_v12 while origin is on banner_v13",
+        },
+        metrics={
+            "dash-cdn": "stale_object_rate 1.4%, edge_sync_lag_s 312",
+        },
+        red_herring_metrics={
+            "dash-auth": "401_rate 0.2%",
+        },
+        kb={
+            "kb-cdn-purge": "Always use wildcard purge with full edge fanout for visual assets.",
+        },
+        good_handoff="investigator_agent",
+        accepted_fix_keywords=(
+            ("reissue", "cdn", "purge"),
+            ("fanout", "edge", "invalidation"),
+            ("rotate", "asset", "hash"),
+        ),
+        required_investigations=1,
+        customer_tier="standard",
+        affected_users_estimate=11_000,
+        revenue_impact_usd_per_min=60,
+        requires_mitigation=True,
+    )
+
+
+def _autocomplete_stale() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-E6",
+        title="Search autocomplete missing this week's products",
+        description=(
+            "Free-tier shoppers see a stale autocomplete list that does not "
+            "surface new SKUs released this Monday."
+        ),
+        category="search",
+        difficulty="easy",
+        root_cause="autocomplete_index_rebuild_skipped",
+        root_cause_synonyms=(
+            "autocomplete index rebuild skipped",
+            "suggestion index stale",
+            "nightly reindex missed",
+        ),
+        clue_keywords=("autocomplete", "index", "reindex", "suggestion"),
+        signals=(
+            "New SKUs launched Monday never appear in suggest responses",
+            "Full text search returns them correctly",
+        ),
+        logs={
+            "suggest-indexer": "Scheduled rebuild skipped (upstream lock held)",
+            "suggest-api": "Serving snapshot v88 (expected v91)",
+        },
+        red_herring_logs={
+            "payments-api": "steady 2xx",
+        },
+        metrics={
+            "dash-suggest": "index_version 88, target_version 91",
+            "dash-search": "full_text_recall 99%, autocomplete_recall 71%",
+        },
+        kb={
+            "kb-autocomplete": "Reindex lock must release on job exit and alert on missed window.",
+        },
+        good_handoff="ops_manager_agent",
+        accepted_fix_keywords=(
+            ("force", "index", "rebuild"),
+            ("release", "reindex", "lock"),
+            ("promote", "suggestion", "snapshot"),
+        ),
+        required_investigations=1,
+        customer_tier="free",
+        affected_users_estimate=18_000,
+        revenue_impact_usd_per_min=30,
+        requires_mitigation=True,
+    )
+
+
+def _webhook_retry_budget() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-E7",
+        title="Partner webhooks silently dropping",
+        description=(
+            "A handful of partner integrations stopped receiving webhook "
+            "deliveries after a downstream 429 spike."
+        ),
+        category="integrations",
+        difficulty="easy",
+        root_cause="webhook_retry_budget_exhausted",
+        root_cause_synonyms=(
+            "webhook retry budget exhausted",
+            "partner webhook giving up",
+            "429 retry exhaustion",
+        ),
+        clue_keywords=("webhook", "retry", "429", "budget"),
+        signals=(
+            "Deliveries succeed for some partners and silently fail for others",
+            "Affected partners all share a single rate-limit bucket",
+        ),
+        logs={
+            "webhook-dispatcher": "Retry budget exhausted for partner_bucket=bucket-7",
+            "partner-gateway": "HTTP 429 for 22 consecutive attempts on bucket-7",
+        },
+        red_herring_logs={
+            "catalog-api": "steady 2xx",
+        },
+        metrics={
+            "dash-webhooks": "delivery_success_bucket7 34%, retry_budget_remaining 0",
+        },
+        kb={
+            "kb-webhook-retry": "Split rate-limit buckets per partner and reset retry budgets on recovery.",
+        },
+        good_handoff="ops_manager_agent",
+        accepted_fix_keywords=(
+            ("split", "retry", "bucket"),
+            ("reset", "retry", "budget"),
+            ("pause", "partner", "bucket"),
+        ),
+        required_investigations=2,
+        customer_tier="standard",
+        affected_users_estimate=1_400,
+        revenue_impact_usd_per_min=80,
+        requires_mitigation=True,
+    )
+
+
+def _thumbnail_worker_oom() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-E8",
+        title="User profile thumbnails render blank on mobile",
+        description=(
+            "Free-tier mobile users see empty circles where their profile "
+            "photo should appear, intermittently."
+        ),
+        category="media",
+        difficulty="easy",
+        root_cause="thumbnail_worker_oom_killed",
+        root_cause_synonyms=(
+            "thumbnail worker oom killed",
+            "image worker out of memory",
+            "thumbnailer oom loop",
+        ),
+        clue_keywords=("thumbnail", "oom", "memory", "worker"),
+        signals=(
+            "Missing thumbnails correlate with HEIC uploads from newer devices",
+            "CPU is normal but worker restart count is spiking",
+        ),
+        logs={
+            "thumbnail-worker": "SIGKILL received (oom_score_adj=500)",
+            "image-pipeline": "HEIC decoder peak rss 1.9GB on large uploads",
+        },
+        metrics={
+            "dash-thumbnails": "render_success 82%, worker_restarts 240/hr",
+            "dash-k8s": "pod_oom_kill_count 42",
+        },
+        kb={
+            "kb-thumbnail": "Cap HEIC decode memory or reject above 30MP at the edge.",
+        },
+        good_handoff="triage_agent",
+        accepted_fix_keywords=(
+            ("raise", "memory", "limit"),
+            ("reject", "oversized", "heic"),
+            ("downscale", "before", "decode"),
+        ),
+        required_investigations=2,
+        customer_tier="free",
+        affected_users_estimate=55_000,
+        revenue_impact_usd_per_min=20,
+        requires_mitigation=True,
+    )
+
+
+def _recommender_heap_leak() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-M6",
+        title="Recommender latency drifts up after model swap",
+        description=(
+            "Homepage recommendation latency is drifting up over six hours "
+            "since this morning's model swap. p99 is now 2.1s."
+        ),
+        category="recommendations",
+        difficulty="medium",
+        root_cause="recommender_heap_leak_after_model_swap",
+        root_cause_synonyms=(
+            "recommender heap leak after model swap",
+            "embedding cache not released",
+            "old model tensors pinned",
+        ),
+        clue_keywords=("heap", "leak", "embedding", "model", "swap"),
+        signals=(
+            "Heap utilisation climbs 2% / hour since deploy",
+            "Full GC frequency doubled but does not recover memory",
+        ),
+        logs={
+            "recommender-service": "Loaded model v42; previous tensors not released",
+            "jvm-gc": "Old gen occupancy 88% after full GC",
+        },
+        red_herring_logs={
+            "catalog-api": "steady 2xx",
+        },
+        metrics={
+            "dash-recommender": "p99_latency_ms 2100, heap_used_pct 88",
+            "dash-jvm": "full_gc_per_min 4, reclaimed_bytes_low",
+        },
+        red_herring_metrics={
+            "dash-search": "ctr steady",
+        },
+        kb={
+            "kb-model-swap": "Release previous model tensors explicitly before binding the new one.",
+        },
+        good_handoff="investigator_agent",
+        accepted_fix_keywords=(
+            ("release", "previous", "model"),
+            ("unload", "embedding", "cache"),
+            ("rollback", "model", "swap"),
+        ),
+        required_investigations=2,
+        customer_tier="premium",
+        affected_users_estimate=95_000,
+        revenue_impact_usd_per_min=410,
+        requires_mitigation=True,
+    )
+
+
+def _consumer_group_rebalance() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-M7",
+        title="Order events stuck behind consumer rebalance storm",
+        description=(
+            "Order processing lag spiked after a rolling restart and has not "
+            "recovered; fresh orders are 90s behind real time."
+        ),
+        category="messaging",
+        difficulty="medium",
+        root_cause="consumer_group_rebalance_storm",
+        root_cause_synonyms=(
+            "consumer group rebalance storm",
+            "kafka consumer thrashing",
+            "repeated partition reassignment",
+        ),
+        clue_keywords=("kafka", "consumer", "rebalance", "partition"),
+        signals=(
+            "Consumer group rebalanced 11 times in 5 minutes",
+            "Lag stuck even though CPU is at 30%",
+        ),
+        logs={
+            "order-consumer": "Rebalance triggered: member id rotated, session timeout=10s",
+            "kafka-coordinator": "Generation 412 -> 423 in 5m, partitions churning",
+        },
+        red_herring_logs={
+            "auth-service": "normal 2xx",
+        },
+        metrics={
+            "dash-orders": "consumer_lag 90s, rebalance_count_5m 11",
+            "dash-kafka": "generation_rotations 2.2/min",
+        },
+        kb={
+            "kb-consumer-tuning": "Raise session.timeout.ms and heartbeat.interval.ms to avoid false expulsion.",
+        },
+        good_handoff="ops_manager_agent",
+        accepted_fix_keywords=(
+            ("raise", "session", "timeout"),
+            ("pin", "static", "membership"),
+            ("stabilise", "consumer", "group"),
+        ),
+        required_investigations=2,
+        customer_tier="premium",
+        affected_users_estimate=48_000,
+        revenue_impact_usd_per_min=520,
+        requires_mitigation=True,
+    )
+
+
+def _config_push_skipped_canary() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-M8",
+        title="Enterprise tenants hit TLS verify failures after config push",
+        description=(
+            "A global config change flipped a TLS verification flag in "
+            "production without going through canary."
+        ),
+        category="platform",
+        difficulty="medium",
+        root_cause="config_push_skipped_canary",
+        root_cause_synonyms=(
+            "config push skipped canary",
+            "global config bypassed stage",
+            "bulk config rollout regression",
+        ),
+        clue_keywords=("config", "canary", "push", "rollout"),
+        signals=(
+            "Enterprise tenants see TLS verify errors 3 minutes after deploy",
+            "Canary stage shows zero traffic for this change",
+        ),
+        logs={
+            "config-service": "Changeset CR-8812 applied globally (stages=[])",
+            "api-gateway": "TLS verify flag=strict caused downstream handshake failures",
+        },
+        red_herring_logs={
+            "email-service": "no anomalies",
+        },
+        metrics={
+            "dash-config": "canary_coverage 0%, rollout_surface 100%",
+            "dash-gateway": "tls_verify_failures 8.3%",
+        },
+        kb={
+            "kb-config-rollout": "Require canary + 15 minutes bake before promoting config changes.",
+        },
+        good_handoff="ops_manager_agent",
+        accepted_fix_keywords=(
+            ("rollback", "config", "change"),
+            ("re-enable", "canary", "stage"),
+            ("revert", "tls", "flag"),
+        ),
+        required_investigations=2,
+        customer_tier="enterprise",
+        affected_users_estimate=2_100,
+        revenue_impact_usd_per_min=640,
+        requires_mitigation=True,
+        postmortem_required=True,
+    )
+
+
+def _health_check_flapping() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-M9",
+        title="Autoscaler thrashing under brief latency blips",
+        description=(
+            "Autoscaler is adding and removing pods every 2 minutes in "
+            "response to very short latency blips."
+        ),
+        category="platform",
+        difficulty="medium",
+        root_cause="health_check_timeout_too_aggressive",
+        root_cause_synonyms=(
+            "health check timeout too aggressive",
+            "liveness probe too tight",
+            "autoscaler oscillating",
+        ),
+        clue_keywords=("health", "check", "liveness", "autoscaler"),
+        signals=(
+            "Pod churn 6x baseline with no underlying load change",
+            "Brief p99 blips align with scale events, not incidents",
+        ),
+        logs={
+            "kubelet": "Liveness probe failed: HTTP 500 after 800ms",
+            "autoscaler": "Scale up triggered; 3 pods added, 2 removed within 2m",
+        },
+        red_herring_logs={
+            "payments-api": "steady 2xx",
+        },
+        metrics={
+            "dash-k8s": "pod_churn_per_min 9, cpu_avg 42%",
+            "dash-slo": "p99_latency_ms spikes tied to scale events",
+        },
+        kb={
+            "kb-health-probe": "Raise liveness timeout and stagger readiness to avoid flap-driven scale events.",
+        },
+        good_handoff="triage_agent",
+        accepted_fix_keywords=(
+            ("raise", "probe", "timeout"),
+            ("dampen", "autoscaler", "cooldown"),
+            ("relax", "liveness", "threshold"),
+        ),
+        required_investigations=2,
+        customer_tier="standard",
+        affected_users_estimate=31_000,
+        revenue_impact_usd_per_min=210,
+        requires_mitigation=True,
+    )
+
+
+def _payment_webhook_dedupe() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-M10",
+        title="Payment confirmations delivered twice to enterprise partners",
+        description=(
+            "Two enterprise payment partners received the same confirmation "
+            "webhook twice for a subset of transactions."
+        ),
+        category="payments",
+        difficulty="medium",
+        root_cause="webhook_dedupe_window_too_narrow",
+        root_cause_synonyms=(
+            "webhook dedupe window too narrow",
+            "payment webhook duplicate delivery",
+            "idempotency window clock drift",
+        ),
+        clue_keywords=("webhook", "dedupe", "idempotency", "window"),
+        signals=(
+            "Duplicates concentrated on retries across failover boundary",
+            "Dedupe cache TTL is shorter than retry backoff",
+        ),
+        logs={
+            "payments-webhook": "Duplicate delivery for txn T-332a after dedupe cache eviction",
+            "scheduler": "Retry backoff 90s; dedupe ttl=60s",
+        },
+        red_herring_logs={
+            "email-service": "steady",
+        },
+        metrics={
+            "dash-payments": "duplicate_webhook_rate 0.9%, dedupe_hit_rate 88%",
+        },
+        kb={
+            "kb-webhook-dedupe": "Dedupe TTL must exceed the maximum retry backoff window.",
+        },
+        good_handoff="investigator_agent",
+        accepted_fix_keywords=(
+            ("extend", "dedupe", "ttl"),
+            ("shrink", "retry", "backoff"),
+            ("persist", "dedupe", "store"),
+        ),
+        required_investigations=2,
+        customer_tier="enterprise",
+        affected_users_estimate=620,
+        revenue_impact_usd_per_min=480,
+        requires_mitigation=True,
+        postmortem_required=True,
+    )
+
+
+def _origin_shield_bypass() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-M11",
+        title="Origin overloaded after CDN policy change",
+        description=(
+            "Origin servers are seeing 5x normal traffic because a CDN "
+            "policy change disabled origin shield for a large segment."
+        ),
+        category="cdn",
+        difficulty="medium",
+        root_cause="origin_shield_bypass_after_policy_change",
+        root_cause_synonyms=(
+            "origin shield bypass after policy change",
+            "shield disabled for segment",
+            "cache hierarchy collapsed",
+        ),
+        clue_keywords=("origin", "shield", "cdn", "policy"),
+        signals=(
+            "Origin 5xx rate climbs as CDN hit ratio collapses",
+            "New CDN policy rolled out exactly at fault onset",
+        ),
+        logs={
+            "cdn-policy": "Policy v5 removed shield targeting for premium segment",
+            "origin-lb": "Connection queue depth spiking 5x baseline",
+        },
+        red_herring_logs={
+            "dns-resolver": "no anomalies",
+        },
+        metrics={
+            "dash-cdn": "hit_ratio 67% (baseline 94%)",
+            "dash-origin": "rps 5.2x baseline, 5xx_rate 7.1%",
+        },
+        kb={
+            "kb-origin-shield": "Changes to shield routing must go through shadow traffic before promotion.",
+        },
+        good_handoff="investigator_agent",
+        accepted_fix_keywords=(
+            ("rollback", "cdn", "policy"),
+            ("re-enable", "origin", "shield"),
+            ("route", "through", "shield"),
+        ),
+        required_investigations=3,
+        customer_tier="premium",
+        affected_users_estimate=240_000,
+        revenue_impact_usd_per_min=1_300,
+        requires_mitigation=True,
+        postmortem_required=True,
+    )
+
+
+def _gpu_memory_fragmentation() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-H6",
+        title="LLM inference latency drifts up on production A100 pool",
+        description=(
+            "Enterprise API latency for the inference gateway has drifted "
+            "from 420ms to 1.4s over 36 hours, with OOMs on larger prompts."
+        ),
+        category="ml_inference",
+        difficulty="hard",
+        root_cause="gpu_memory_fragmentation_after_prompt_schema_change",
+        root_cause_synonyms=(
+            "gpu memory fragmentation after prompt schema change",
+            "kv cache fragmentation",
+            "inference pool memory fragmentation",
+        ),
+        clue_keywords=("gpu", "memory", "fragmentation", "kv", "cache"),
+        signals=(
+            "Free VRAM fragmented into small blocks even though total free > 18GB",
+            "OOM errors concentrate on prompts >2k tokens",
+        ),
+        logs={
+            "inference-gateway": "CUDA OOM despite torch reports 18GB free; fragmentation detected",
+            "model-runner": "Prompt schema v3 increased variable sequence lengths",
+        },
+        red_herring_logs={
+            "auth-service": "steady",
+        },
+        metrics={
+            "dash-inference": "p99_latency_ms 1400, oom_rate 3.2%",
+            "dash-gpu": "vram_fragmentation_score 0.74",
+        },
+        kb={
+            "kb-vram": "Recycle inference workers daily and pad sequences to bucketed lengths.",
+        },
+        good_handoff="investigator_agent",
+        accepted_fix_keywords=(
+            ("recycle", "inference", "workers"),
+            ("bucket", "prompt", "lengths"),
+            ("rollback", "prompt", "schema"),
+        ),
+        required_investigations=3,
+        customer_tier="enterprise",
+        affected_users_estimate=5_200,
+        revenue_impact_usd_per_min=1_850,
+        requires_mitigation=True,
+        postmortem_required=True,
+    )
+
+
+def _replication_saturation() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-H7",
+        title="Cross-region replication lag blocks disaster-recovery RPO",
+        description=(
+            "Replication lag from the primary region to DR has exceeded "
+            "five minutes for the last hour, violating RPO=60s."
+        ),
+        category="data",
+        difficulty="hard",
+        root_cause="replication_saturation_during_backup_window",
+        root_cause_synonyms=(
+            "replication saturation during backup window",
+            "wal shipping backpressure",
+            "replica network saturation",
+        ),
+        clue_keywords=("replication", "lag", "wal", "rpo", "backup"),
+        signals=(
+            "Lag correlates exactly with nightly backup window",
+            "Network egress saturated on primary -> DR link",
+        ),
+        logs={
+            "db-primary": "WAL shipping backpressure; replica slot lagging 6.2m",
+            "backup-job": "Base backup in progress; 4.1 GB/s read rate",
+        },
+        red_herring_logs={
+            "notification-gateway": "steady delivery",
+        },
+        metrics={
+            "dash-replication": "lag_seconds 372 (rpo=60)",
+            "dash-network": "egress_primary_to_dr 9.8 Gbps (cap=10)",
+        },
+        kb={
+            "kb-replication-backup": "Throttle backup or move it off hours of peak replication traffic.",
+        },
+        good_handoff="ops_manager_agent",
+        accepted_fix_keywords=(
+            ("throttle", "backup", "rate"),
+            ("shift", "backup", "window"),
+            ("raise", "replication", "bandwidth"),
+        ),
+        required_investigations=3,
+        customer_tier="enterprise",
+        affected_users_estimate=8_900,
+        revenue_impact_usd_per_min=1_400,
+        requires_mitigation=True,
+        postmortem_required=True,
+    )
+
+
+def _cache_key_collision() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-H8",
+        title="Cross-tenant data bleed from cache key collision",
+        description=(
+            "A rare cache key collision is briefly returning one enterprise "
+            "tenant's data to another. This is a data-isolation incident."
+        ),
+        category="security",
+        difficulty="hard",
+        root_cause="cache_key_collision_across_tenants",
+        root_cause_synonyms=(
+            "cache key collision across tenants",
+            "shared cache tenant bleed",
+            "tenant id missing from cache key",
+        ),
+        clue_keywords=("cache", "key", "collision", "tenant"),
+        signals=(
+            "Two enterprise tenants report seeing each other's dashboard metadata",
+            "Cache key construction omits tenant-id under a specific code path",
+        ),
+        logs={
+            "api-gateway": "Cache HIT for key=/v2/workspace/42 served to tenant=91",
+            "cache-layer": "Collision detected between tenants 42 and 91 on key prefix /v2/workspace",
+        },
+        red_herring_logs={
+            "email-service": "steady",
+        },
+        metrics={
+            "dash-cache": "collision_count 14 in last 2h",
+            "dash-security": "isolation_violations 2",
+        },
+        kb={
+            "kb-cache-tenant": "Prefix every cache key with tenant_id and enforce via lint check.",
+        },
+        good_handoff="ops_manager_agent",
+        accepted_fix_keywords=(
+            ("prefix", "tenant", "cache"),
+            ("invalidate", "shared", "cache"),
+            ("quarantine", "cache", "segment"),
+        ),
+        required_investigations=3,
+        customer_tier="enterprise",
+        affected_users_estimate=320,
+        revenue_impact_usd_per_min=2_100,
+        requires_mitigation=True,
+        postmortem_required=True,
+    )
+
+
+def _cron_dst_double_trigger() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-H9",
+        title="Scheduled jobs fire twice at DST rollover",
+        description=(
+            "Key premium billing jobs executed twice at the daylight-saving "
+            "transition, causing premium charge duplicates."
+        ),
+        category="scheduling",
+        difficulty="hard",
+        root_cause="cron_dst_transition_double_trigger",
+        root_cause_synonyms=(
+            "cron dst transition double trigger",
+            "scheduler timezone ambiguity",
+            "dst fallback replay",
+        ),
+        clue_keywords=("cron", "dst", "timezone", "scheduler"),
+        signals=(
+            "Job history shows two runs at 01:00 and 01:00 local time",
+            "Billing duplicates concentrate on a single geographic region",
+        ),
+        logs={
+            "scheduler": "Fired job billing.nightly at 2026-03-29 01:00 (GMT+1 and GMT+0)",
+            "billing-worker": "Second invocation completed 12 minutes after first",
+        },
+        red_herring_logs={
+            "catalog-api": "steady 2xx",
+        },
+        metrics={
+            "dash-scheduler": "double_fire_count 3 (expected 0)",
+            "dash-billing": "duplicate_charge_rate 2.1%",
+        },
+        kb={
+            "kb-dst-schedule": "Anchor scheduled jobs on UTC and convert to local time at display only.",
+        },
+        good_handoff="investigator_agent",
+        accepted_fix_keywords=(
+            ("anchor", "schedule", "utc"),
+            ("deduplicate", "scheduled", "runs"),
+            ("reconcile", "duplicate", "charges"),
+        ),
+        required_investigations=3,
+        customer_tier="premium",
+        affected_users_estimate=6_400,
+        revenue_impact_usd_per_min=1_100,
+        requires_mitigation=True,
+        postmortem_required=True,
+    )
+
+
+def _partial_publish_feed() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-H10",
+        title="Real-time feed gaps during partial publish",
+        description=(
+            "Premium trading-floor customers see gaps in the realtime price "
+            "feed after a publisher restart; some updates never arrived."
+        ),
+        category="realtime",
+        difficulty="hard",
+        root_cause="partial_publish_without_transaction_boundary",
+        root_cause_synonyms=(
+            "partial publish without transaction boundary",
+            "publisher crash mid batch",
+            "realtime feed gap",
+        ),
+        clue_keywords=("publish", "transaction", "feed", "partial"),
+        signals=(
+            "Sequence numbers skip in a bounded window around the publisher restart",
+            "Replay API can fill the gap but live subscribers missed it",
+        ),
+        logs={
+            "price-publisher": "Process restarted mid-batch, seq=88230 not flushed",
+            "realtime-bus": "Detected sequence gap 88230-88236 on channel=prices.us",
+        },
+        red_herring_logs={
+            "auth-service": "steady",
+        },
+        metrics={
+            "dash-realtime": "gap_count 6 in 30s, subscriber_reconcile_lag_s 48",
+        },
+        kb={
+            "kb-publish-txn": "Wrap each batch in a transactional publish so crashes never leave gaps.",
+        },
+        good_handoff="investigator_agent",
+        accepted_fix_keywords=(
+            ("enable", "transactional", "publish"),
+            ("replay", "sequence", "gap"),
+            ("force", "subscriber", "reconcile"),
+        ),
+        required_investigations=3,
+        customer_tier="premium",
+        affected_users_estimate=3_900,
+        revenue_impact_usd_per_min=1_750,
+        requires_mitigation=True,
+        postmortem_required=True,
+    )
+
+
+def _ssd_firmware_regression() -> IncidentTemplate:
+    return IncidentTemplate(
+        id="INC-H11",
+        title="Storage checksum failures on upgraded SSD fleet",
+        description=(
+            "Enterprise object storage is returning checksum-mismatch errors "
+            "on a subset of volumes after a firmware roll-forward."
+        ),
+        category="storage",
+        difficulty="hard",
+        root_cause="ssd_firmware_checksum_regression",
+        root_cause_synonyms=(
+            "ssd firmware checksum regression",
+            "storage firmware corruption",
+            "nvme firmware crc bug",
+        ),
+        clue_keywords=("firmware", "ssd", "checksum", "storage"),
+        signals=(
+            "Checksum failures concentrate on volumes upgraded in the last 72 hours",
+            "Vendor advisory mentions similar symptoms after firmware F2.14",
+        ),
+        logs={
+            "storage-agent": "CRC mismatch on volume vol-221 firmware=F2.14",
+            "fleet-manager": "Upgrade batch included F2.14 for 18 volumes",
+        },
+        red_herring_logs={
+            "email-service": "steady",
+        },
+        metrics={
+            "dash-storage": "checksum_error_rate 0.8%",
+            "dash-fleet": "volumes_on_F2.14 18, volumes_healthy 402",
+        },
+        kb={
+            "kb-ssd-firmware": "Quarantine affected firmware and roll back to the last known-good version.",
+        },
+        good_handoff="ops_manager_agent",
+        accepted_fix_keywords=(
+            ("rollback", "ssd", "firmware"),
+            ("quarantine", "affected", "volumes"),
+            ("reseed", "checksum", "index"),
+        ),
+        required_investigations=3,
+        customer_tier="enterprise",
+        affected_users_estimate=1_800,
+        revenue_impact_usd_per_min=1_950,
+        requires_mitigation=True,
+        postmortem_required=True,
+    )
+
+
 def build_incident_library() -> IncidentLibrary:
-    """Return the built-in enterprise incident library."""
+    """Return the built-in enterprise incident library (30 templates)."""
     return IncidentLibrary(
         templates_by_task={
-            "easy": [_redis_pool(), _jwt_clock_skew(), _email_spam_false_positive()],
+            "easy": [
+                _redis_pool(),
+                _jwt_clock_skew(),
+                _email_spam_false_positive(),
+                _dns_ttl_stale(),
+                _cdn_purge_scope(),
+                _autocomplete_stale(),
+                _webhook_retry_budget(),
+                _thumbnail_worker_oom(),
+            ],
             "medium": [
                 _cache_invalidation_lag(),
                 _tz_normalization(),
                 _invoice_idempotency(),
                 _tls_expiry(),
                 _feature_flag_rollout(),
+                _recommender_heap_leak(),
+                _consumer_group_rebalance(),
+                _config_push_skipped_canary(),
+                _health_check_flapping(),
+                _payment_webhook_dedupe(),
+                _origin_shield_bypass(),
             ],
             "hard": [
                 _promo_rate_cascade(),
@@ -868,6 +1736,12 @@ def build_incident_library() -> IncidentLibrary:
                 _alert_storm(),
                 _inventory_race(),
                 _deadlock_database(),
+                _gpu_memory_fragmentation(),
+                _replication_saturation(),
+                _cache_key_collision(),
+                _cron_dst_double_trigger(),
+                _partial_publish_feed(),
+                _ssd_firmware_regression(),
             ],
         }
     )
